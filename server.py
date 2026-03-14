@@ -16,8 +16,6 @@ from constants import token
 from github import (
     add_issue_reaction,
     comment_on_issue,
-    create_pull_request,
-    get_default_branch,
 )
 from agent import run_agent_on_issue
 
@@ -151,27 +149,6 @@ def _handle_issue_sync(
             issue_body=issue_body,
         )
 
-        base = get_default_branch(owner, repo_name, token)
-        branch_name = f"agent/issue-{issue_number}"
-        pr_body = f"Fixes #{issue_number}\n\n{issue_title}\n\n{issue_body or ''}"
-        pr = create_pull_request(
-            owner=owner,
-            repo=repo_name,
-            token=token,
-            title=issue_title,
-            body=pr_body,
-            head=branch_name,
-            base=base,
-        )
-        pr_url = pr.get("html_url", "")
-        comment_on_issue(
-            owner=owner,
-            repo=repo_name,
-            issue_number=issue_number,
-            token=token,
-            body=f"I've created a PR to address this issue: {pr_url}",
-        )
-        logger.info("PR created for issue #%s: %s", issue_number, pr_url)
     except Exception as e:
         logger.exception("Failed to handle issue #%s: %s", issue_number, e)
         try:
@@ -189,7 +166,7 @@ def _handle_issue_sync(
 def run() -> None:
     """Run the webhook server. Use: uv run serve or python -m server"""
 
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
 
 
 if __name__ == "__main__":

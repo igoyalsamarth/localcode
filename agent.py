@@ -97,14 +97,57 @@ Please implement the requested changes:
 2. Create a new branch named exactly: agent/issue-{issue_number}
 3. Make the required code changes
 4. Commit your changes (remember 🤖 in commit message)
-5. Push the branch: git push origin agent/issue-{issue_number}
+5. Before pushing, ensure the remote uses GITHUB_TOKEN: git remote set-url origin {clone_url}
+6. Push the branch: git push origin agent/issue-{issue_number}
+7. Raise a PR against the default branch with a relevant title and body (gh pr create [flags]), remember to mention in the body that this PR "Closes #{issue_number}" so that the issue gets auto-closed when the PR is merged.
+8. Finally comment on the issue with a relevant message that the PR has been raised, and include the PR link in the comment.
 
-Do NOT create the pull request - that will be done automatically. Just clone, branch, implement, commit, and push."""
+"""
+    for chunk in agent.stream(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ]
+        },
+        stream_mode="messages",
+        subgraphs=True,
+        version="v2",
+    ):
+        if chunk["type"] == "messages":
+            token, metadata = chunk["data"]
 
-    agent.invoke(
-        {"messages": [{"role": "user", "content": prompt}]},
-        config={"configurable": {}},
-    )
+            # Identify source: "main" or the subagent namespace segment
+            is_subagent = any(s.startswith("tools:") for s in chunk["ns"])
+            source = (
+                next((s for s in chunk["ns"] if s.startswith("tools:")), "main")
+                if is_subagent
+                else "main"
+            )
+
+            # Tool call chunks (streaming tool invocations)
+            tool_call_chunks = getattr(token, "tool_call_chunks", None) or []
+            if tool_call_chunks:
+                for tc in tool_call_chunks:
+                    if tc.get("name"):
+                        print(f"[{source}] Tool call: {tc['name']}")
+                    # Args stream in chunks - write them incrementally
+                    if tc.get("args"):
+                        print(tc["args"], end="", flush=True)
+
+            # Tool results
+            if token.type == "tool":
+                print(
+                    f"[{source}] Tool result [{token.name}]: {str(token.content)[:150]}"
+                )
+
+            # Regular AI content (skip tool call messages)
+            if token.type == "ai" and token.content and not tool_call_chunks:
+                print(token.content, end="", flush=True)
+
+        print()
 
 
 if __name__ == "__main__":
