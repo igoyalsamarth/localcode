@@ -70,8 +70,44 @@ agent = create_deep_agent(
     backend=backend,
 )
 
-if __name__ == "__main__":
 
+def run_agent_on_issue(
+    repo_url: str,
+    repo_name: str,
+    issue_number: int,
+    issue_title: str,
+    issue_body: str,
+) -> None:
+    """
+    Run the agent on an issue. The agent will clone the repo, implement changes,
+    create branch agent/issue-{N}, commit, and push. PR creation and issue comment
+    are done separately by the webhook handler.
+    """
+    # Extract owner/repo from URL (e.g. https://github.com/owner/repo -> owner/repo)
+    full_name = "/".join(repo_url.rstrip("/").rsplit("/", 2)[-2:])
+    clone_url = f"https://x-access-token:$GITHUB_TOKEN@github.com/{full_name}.git"
+    prompt = f"""In the repository {repo_url} (repo folder: repos/{repo_name}):
+
+**Issue #{issue_number}: {issue_title}**
+
+{issue_body or "(No description provided)"}
+
+Please implement the requested changes:
+1. Clone the repo to repos/{repo_name} if it doesn't exist (use: git clone {clone_url} repos/{repo_name})
+2. Create a new branch named exactly: agent/issue-{issue_number}
+3. Make the required code changes
+4. Commit your changes (remember 🤖 in commit message)
+5. Push the branch: git push origin agent/issue-{issue_number}
+
+Do NOT create the pull request - that will be done automatically. Just clone, branch, implement, commit, and push."""
+
+    agent.invoke(
+        {"messages": [{"role": "user", "content": prompt}]},
+        config={"configurable": {}},
+    )
+
+
+if __name__ == "__main__":
     for chunk in agent.stream(
         {
             "messages": [

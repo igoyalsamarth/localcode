@@ -61,3 +61,50 @@ def comment_on_issue(owner: str, repo: str, issue_number: int, token: str, body:
     r = requests.post(url, headers=headers, json=payload)
     r.raise_for_status()
     return r.json()
+
+
+def get_default_branch(owner: str, repo: str, token: str) -> str:
+    """Get the default branch of a repository."""
+    url = f"https://api.github.com/repos/{owner}/{repo}"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    r = requests.get(url, headers=headers)
+    r.raise_for_status()
+    data = r.json()
+    return data.get("default_branch", "main")
+
+
+def create_pull_request(
+    owner: str,
+    repo: str,
+    token: str,
+    title: str,
+    body: str,
+    head: str,
+    base: str = "main",
+) -> dict:
+    """
+    Create a pull request. Include "Fixes #N" in body to link and auto-close the issue.
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "title": title,
+        "body": body,
+        "head": head,
+        "base": base,
+    }
+
+    r = requests.post(url, headers=headers, json=payload)
+    r.raise_for_status()
+    return r.json()
