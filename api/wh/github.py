@@ -3,26 +3,23 @@
 import hashlib
 import hmac
 import json
-import os
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
 
-from constants import token
+from constants import token, GITHUB_WEBHOOK_SECRET
 from github import add_issue_reaction, comment_on_issue
 from agent import run_agent_on_issue
 from logger import get_logger
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/webhook", tags=["webhooks"])
-
-WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+router = APIRouter(prefix="/wh", tags=["webhooks"])
 
 
 def _verify_signature(payload: bytes, signature: str | None) -> bool:
     """Verify the GitHub webhook signature using HMAC-SHA256."""
-    if not WEBHOOK_SECRET:
+    if not GITHUB_WEBHOOK_SECRET:
         logger.warning(
             "GITHUB_WEBHOOK_SECRET not set - skipping signature verification"
         )
@@ -30,7 +27,7 @@ def _verify_signature(payload: bytes, signature: str | None) -> bool:
     if not signature or not signature.startswith("sha256="):
         return False
     expected = hmac.new(
-        WEBHOOK_SECRET.encode(),
+        GITHUB_WEBHOOK_SECRET.encode(),
         payload,
         hashlib.sha256,
     ).hexdigest()

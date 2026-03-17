@@ -33,6 +33,9 @@ def _orm_config() -> ConfigDict:
 class UserBase(BaseModel):
     email: str
     name: str | None = None
+    github_user_id: int | None = None
+    github_login: str | None = None
+    avatar_url: str | None = None
     auth_provider: str
 
 

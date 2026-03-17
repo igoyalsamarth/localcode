@@ -13,7 +13,7 @@ load_dotenv()
 from fastapi import FastAPI
 
 from db import create_tables
-from api import health_router
+from api import health_router, auth_router
 from api.wh import github_router
 from logger import get_logger
 
@@ -36,4 +36,5 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(auth_router)
 app.include_router(github_router)
