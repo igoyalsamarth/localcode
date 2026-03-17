@@ -1,34 +1,21 @@
-"""
-FastAPI server to receive GitHub webhooks.
-
-When an issue is created in a configured repository, the webhook is received
-and triggers the agent to implement changes, open a PR, and comment on the issue.
-"""
+"""GitHub webhook handler."""
 
 import hashlib
 import hmac
 import json
-import logging
 import os
-import uvicorn
 from typing import Any
+
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
+
 from constants import token
-from github import (
-    add_issue_reaction,
-    comment_on_issue,
-)
+from github import add_issue_reaction, comment_on_issue
 from agent import run_agent_on_issue
+from logger import get_logger
 
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
+logger = get_logger(__name__)
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = FastAPI(
-    title="LocalCode Webhook Server",
-    description="Receives GitHub webhooks and triggers the agent on new issues",
-    version="0.1.0",
-)
+router = APIRouter(prefix="/webhook", tags=["webhooks"])
 
 WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
 
@@ -48,87 +35,6 @@ def _verify_signature(payload: bytes, signature: str | None) -> bool:
         hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(f"sha256={expected}", signature)
-
-
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
-    return {"status": "ok"}
-
-
-@app.post("/webhook/github")
-async def github_webhook(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    x_github_event: str = Header(..., alias="X-GitHub-Event"),
-    x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
-):
-    """
-    Receive GitHub webhooks.
-
-    Expects X-GitHub-Event: "issues" with action "opened" for new issue creation.
-    """
-    payload = await request.body()
-
-    # Verify signature if secret is configured
-    if not _verify_signature(payload, x_hub_signature_256):
-        raise HTTPException(status_code=401, detail="Invalid webhook signature")
-
-    # Only process "issues" events
-    if x_github_event != "issues":
-        logger.info(f"Ignoring event type: {x_github_event}")
-        return {"status": "ignored", "event": x_github_event}
-
-    data: dict[str, Any] = json.loads(payload)
-    action = data.get("action")
-
-    # Only process new issue creation
-    if action != "opened":
-        logger.info(f"Ignoring issues action: {action}")
-        return {"status": "ignored", "action": action}
-
-    issue = data.get("issue", {})
-    repo = data.get("repository", {})
-
-    owner = repo.get("owner", {}).get("login")
-    repo_name = repo.get("name")
-    full_name = repo.get("full_name", f"{owner}/{repo_name}")
-    issue_number = issue.get("number")
-    issue_title = issue.get("title")
-    issue_body = issue.get("body") or ""
-
-    add_issue_reaction(
-        owner=owner,
-        repo=repo_name,
-        issue_number=issue_number,
-        token=token,
-        reaction="eyes",
-    )
-
-    logger.info(
-        "Issue created: #%s %s in %s",
-        issue_number,
-        issue_title,
-        full_name,
-    )
-
-    # Run agent in background (returns quickly to GitHub)
-    background_tasks.add_task(
-        _handle_issue_sync,
-        owner=owner,
-        repo_name=repo_name,
-        full_name=full_name,
-        issue_number=issue_number,
-        issue_title=issue_title,
-        issue_body=issue_body,
-    )
-
-    return {
-        "status": "received",
-        "issue_number": issue_number,
-        "issue_title": issue_title,
-        "repository": full_name,
-    }
 
 
 def _handle_issue_sync(
@@ -163,11 +69,72 @@ def _handle_issue_sync(
             logger.exception("Failed to post error comment: %s", comment_err)
 
 
-def run() -> None:
-    """Run the webhook server. Use: uv run serve or python -m server"""
+@router.post("/github")
+async def github_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_github_event: str = Header(..., alias="X-GitHub-Event"),
+    x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
+):
+    """
+    Receive GitHub webhooks.
 
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=False)
+    Expects X-GitHub-Event: "issues" with action "opened" for new issue creation.
+    """
+    payload = await request.body()
 
+    if not _verify_signature(payload, x_hub_signature_256):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
-if __name__ == "__main__":
-    run()
+    if x_github_event != "issues":
+        logger.info(f"Ignoring event type: {x_github_event}")
+        return {"status": "ignored", "event": x_github_event}
+
+    data: dict[str, Any] = json.loads(payload)
+    action = data.get("action")
+
+    if action != "opened":
+        logger.info(f"Ignoring issues action: {action}")
+        return {"status": "ignored", "action": action}
+
+    issue = data.get("issue", {})
+    repo = data.get("repository", {})
+
+    owner = repo.get("owner", {}).get("login")
+    repo_name = repo.get("name")
+    full_name = repo.get("full_name", f"{owner}/{repo_name}")
+    issue_number = issue.get("number")
+    issue_title = issue.get("title")
+    issue_body = issue.get("body") or ""
+
+    add_issue_reaction(
+        owner=owner,
+        repo=repo_name,
+        issue_number=issue_number,
+        token=token,
+        reaction="eyes",
+    )
+
+    logger.info(
+        "Issue created: #%s %s in %s",
+        issue_number,
+        issue_title,
+        full_name,
+    )
+
+    background_tasks.add_task(
+        _handle_issue_sync,
+        owner=owner,
+        repo_name=repo_name,
+        full_name=full_name,
+        issue_number=issue_number,
+        issue_title=issue_title,
+        issue_body=issue_body,
+    )
+
+    return {
+        "status": "received",
+        "issue_number": issue_number,
+        "issue_title": issue_title,
+        "repository": full_name,
+    }

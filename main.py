@@ -1,5 +1,25 @@
-def main():
-    print("Hello from localcode!")
+"""
+Main entry point for LocalCode webhook server.
+
+Run with: uv run main.py or python main.py
+"""
+
+import uvicorn
+from logger import get_logger
+
+logger = get_logger(__name__)
+
+
+def main() -> None:
+    """Start the LocalCode webhook server."""
+    logger.info("Starting LocalCode webhook server...")
+    
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=False,
+    )
 
 
 if __name__ == "__main__":
