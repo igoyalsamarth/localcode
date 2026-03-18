@@ -50,11 +50,14 @@ class User(Base):
         default=uuid4_default,
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, index=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    bio: Mapped[str | None] = mapped_column(String(160), nullable=True)
     github_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True, index=True)
     github_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     auth_provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    onboarded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     owned_organizations: Mapped[list["Organization"]] = relationship(
@@ -162,6 +165,9 @@ class GitHubInstallation(Base):
         index=True,
     )
     account_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    account_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    account_avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    permissions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

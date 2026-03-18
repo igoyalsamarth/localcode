@@ -32,11 +32,14 @@ def _orm_config() -> ConfigDict:
 
 class UserBase(BaseModel):
     email: str
+    username: str | None = None
     name: str | None = None
+    bio: str | None = None
     github_user_id: int | None = None
     github_login: str | None = None
     avatar_url: str | None = None
     auth_provider: str
+    onboarded: bool = False
 
 
 class UserCreate(UserBase):
@@ -48,6 +51,13 @@ class User(UserBase):
 
     id: UUID
     created_at: datetime | None = None
+
+
+class OnboardingRequest(BaseModel):
+    organization: str
+    username: str
+    fullName: str | None = None
+    bio: str | None = None
 
 
 class OrganizationBase(BaseModel):
