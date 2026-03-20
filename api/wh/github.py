@@ -9,11 +9,17 @@ from sqlalchemy import select
 from db import session_scope
 from logger import get_logger
 from model.tables import User, Organization, GitHubInstallation
+from services.github.coder_trigger import resolve_coder_issue_work
 from services.github.coder_workflow import (
+    ensure_greagent_labels_on_repository,
     prepare_issue_for_coder_work,
     run_coder_agent_for_opened_issue,
 )
 from services.github.issue_payload import IssueOpenedForCoder
+from services.github.repository_bootstrap import (
+    ensure_default_coder_repository_agent,
+    upsert_repository_from_github,
+)
 from services.github.webhook_signature import verify_github_webhook_signature
 
 logger = get_logger(__name__)
@@ -97,6 +103,12 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
                                 active=True,
                             )
                             session.add(new_repo)
+                            session.flush()
+                            ensure_default_coder_repository_agent(session, new_repo)
+                        else:
+                            ensure_default_coder_repository_agent(
+                                session, existing_repo
+                            )
 
                     session.commit()
                     logger.info(
@@ -104,6 +116,17 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
                         org.name,
                         len(repositories),
                     )
+                    for repo in repositories:
+                        full_name = repo.get("full_name") or ""
+                        if "/" not in full_name:
+                            continue
+                        owner, name = full_name.split("/", 1)
+                        try:
+                            ensure_greagent_labels_on_repository(owner, name)
+                        except Exception:
+                            logger.exception(
+                                "Failed to ensure greagent labels for %s", full_name
+                            )
                 else:
                     logger.info(
                         "GitHub App installation already exists: %s", installation_id
@@ -166,12 +189,55 @@ def _handle_installation_repositories(data: dict[str, Any]) -> dict[str, Any]:
     action = data.get("action")
     installation = data.get("installation", {})
     installation_id = installation.get("id")
+    account = installation.get("account") or {}
+    account_login = account.get("login")
 
     logger.info(
         "GitHub App repositories event: %s, installation_id: %s",
         action,
         installation_id,
     )
+
+    repos_added = data.get("repositories_added") or []
+
+    if action == "added" and repos_added:
+        with session_scope() as session:
+            stmt = select(GitHubInstallation).where(
+                GitHubInstallation.github_installation_id == installation_id
+            )
+            inst = session.execute(stmt).scalar_one_or_none()
+            if inst:
+                for repo in repos_added:
+                    try:
+                        row = upsert_repository_from_github(
+                            session,
+                            inst.organization_id,
+                            repo,
+                            account_login_fallback=account_login,
+                        )
+                        ensure_default_coder_repository_agent(session, row)
+                    except Exception:
+                        logger.exception(
+                            "Failed to upsert repository from installation_repositories: %s",
+                            repo.get("full_name"),
+                        )
+            else:
+                logger.warning(
+                    "installation_repositories added but no DB row for installation_id=%s",
+                    installation_id,
+                )
+
+        for repo in repos_added:
+            full_name = repo.get("full_name") or ""
+            if "/" not in full_name:
+                continue
+            owner, name = full_name.split("/", 1)
+            try:
+                ensure_greagent_labels_on_repository(owner, name)
+            except Exception:
+                logger.exception(
+                    "Failed to ensure greagent labels for %s", full_name
+                )
 
     return {
         "status": "received",
@@ -181,7 +247,8 @@ def _handle_installation_repositories(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _parse_coder_trigger(data: dict[str, Any]) -> IssueOpenedForCoder | None:
-    return IssueOpenedForCoder.from_issues_webhook(data)
+    with session_scope() as session:
+        return resolve_coder_issue_work(session, data)
 
 
 async def _handle_issues_event(
@@ -249,7 +316,8 @@ async def github_webhook(
     Single endpoint for GitHub webhooks (GitHub App or repository).
 
     - ``installation`` / ``installation_repositories``: persist installation and repos.
-    - ``issues``: ``greagent:code`` label → coder agent (labels, PR, comment).
+    - ``issues``: coder agent per ``RepositoryAgent`` (auto: ``opened``/``reopened``;
+      label mode: ``greagent:code`` on ``labeled``).
     """
     payload = await request.body()
 

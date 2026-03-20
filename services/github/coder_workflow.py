@@ -18,10 +18,15 @@ from services.github.issue_payload import IssueOpenedForCoder
 logger = get_logger(__name__)
 
 
+def ensure_greagent_labels_on_repository(owner: str, repo_name: str) -> None:
+    """Create the four ``greagent:*`` labels on the repo if they are missing."""
+    for name in (CODE, IN_PROGRESS, DONE, ERROR):
+        ensure_repo_label_exists(owner, repo_name, token, name)
+
+
 def _ensure_greagent_labels_exist(work: IssueOpenedForCoder) -> None:
     """Create greagent:* labels on the repo if they are missing."""
-    for name in (CODE, IN_PROGRESS, DONE, ERROR):
-        ensure_repo_label_exists(work.owner, work.repo_name, token, name)
+    ensure_greagent_labels_on_repository(work.owner, work.repo_name)
 
 
 def _transition_queue_to_in_progress(work: IssueOpenedForCoder) -> None:

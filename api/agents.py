@@ -11,6 +11,8 @@ from db import session_scope
 from model.tables import User, Organization, Repository, Agent, RepositoryAgent, Model
 from model.enums import AgentType
 from logger import get_logger
+from services.github.coder_workflow import ensure_greagent_labels_on_repository
+from services.github.repository_bootstrap import CODER_MODE_AUTO
 
 logger = get_logger(__name__)
 
@@ -82,7 +84,9 @@ async def get_coder_settings():
         config_map = {
             str(ra.repository_id): {
                 "enabled": ra.enabled,
-                "mode": ra.config_json.get("mode", "auto") if ra.config_json else "auto",
+                "mode": ra.config_json.get("mode", CODER_MODE_AUTO)
+                if ra.config_json
+                else CODER_MODE_AUTO,
             }
             for ra in repo_agents
         }
@@ -105,11 +109,16 @@ async def get_coder_settings():
                 "updatedAt": repo.created_at.isoformat() if repo.created_at else None,
             })
             
-            # Add configuration if exists
             if repo_id_str in config_map:
                 configurations.append({
                     "repositoryId": repo.github_repo_id,
-                    **config_map[repo_id_str]
+                    **config_map[repo_id_str],
+                })
+            else:
+                configurations.append({
+                    "repositoryId": repo.github_repo_id,
+                    "enabled": True,
+                    "mode": CODER_MODE_AUTO,
                 })
         
         return {
@@ -221,6 +230,16 @@ async def update_repository_config(
             logger.info(f"Created repository agent config for repo: {repo.name}")
         
         session.commit()
+
+        if config.enabled:
+            try:
+                ensure_greagent_labels_on_repository(repo.owner, repo.name)
+            except Exception:
+                logger.exception(
+                    "Failed to ensure greagent labels for %s/%s",
+                    repo.owner,
+                    repo.name,
+                )
         
         return {
             "repositoryId": repository_id,

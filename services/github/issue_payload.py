@@ -15,8 +15,9 @@ class IssueOpenedForCoder(BaseModel):
     """
     Normalized `issues` event payload for the GitHub coder agent.
 
-    Triggered when someone applies ``greagent:code`` to an existing issue
-    (``labeled``). Create the issue first, then add the label to start the coder.
+    Used for both auto mode (``opened`` / ``reopened``) and label mode
+    (``labeled`` with ``greagent:code``). Trigger selection is implemented in
+    ``services.github.coder_trigger``.
     """
 
     owner: str = Field(..., description="Repository owner login (user or org)")
@@ -28,22 +29,8 @@ class IssueOpenedForCoder(BaseModel):
     issue_body: str = ""
 
     @classmethod
-    def from_issues_webhook(cls, data: dict[str, Any]) -> "IssueOpenedForCoder | None":
-        """
-        Parse an `issues` webhook JSON body.
-
-        Returns a work item only for ``labeled`` when the label applied is
-        ``greagent:code`` (issue must already exist).
-
-        Returns None for all other actions (including ``opened``, ``edited``, etc.).
-        """
-        if data.get("action") != "labeled":
-            return None
-
-        label_name = (data.get("label") or {}).get("name")
-        if not isinstance(label_name, str) or label_name.strip() != CODER_LABEL_QUEUE:
-            return None
-
+    def from_github_issues_event(cls, data: dict[str, Any]) -> "IssueOpenedForCoder | None":
+        """Parse owner, repo, and issue fields from an ``issues`` webhook body."""
         issue = data.get("issue") or {}
         repo = data.get("repository") or {}
 
@@ -71,3 +58,23 @@ class IssueOpenedForCoder(BaseModel):
             issue_title=str(issue_title),
             issue_body=issue_body,
         )
+
+    @classmethod
+    def from_issues_webhook(cls, data: dict[str, Any]) -> "IssueOpenedForCoder | None":
+        """
+        Legacy: ``labeled`` + ``greagent:code`` only.
+
+        Prefer :meth:`resolve_coder_issue_work` for routing that respects DB config.
+        """
+        if data.get("action") != "labeled":
+            return None
+
+        label_name = (data.get("label") or {}).get("name")
+
+        if (
+            not isinstance(label_name, str)
+            or label_name.strip() != CODER_LABEL_QUEUE
+        ):
+            return None
+
+        return cls.from_github_issues_event(data)

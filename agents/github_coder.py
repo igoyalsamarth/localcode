@@ -119,7 +119,8 @@ Please implement the requested changes:
 5. Before pushing, ensure the remote uses GITHUB_TOKEN: git remote set-url origin {clone_url}
 6. Push the branch: git push origin agent/issue-{issue.issue_number}
 7. Raise a PR against the default branch with a relevant title and body (gh pr create [flags]), remember to mention in the body that this PR "Closes #{issue.issue_number}" so that the issue gets auto-closed when the PR is merged.
-8. Finally comment on the issue with a relevant message that the PR has been raised, and include the PR link in the comment.
+8. Comment on the pull request with a short summary and a link to the issue.
+9. Comment on the issue that the PR was opened and include the PR link.
 
 """
     thread_id = coder_thread_id(issue.full_name, issue.issue_number)
