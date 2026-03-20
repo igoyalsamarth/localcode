@@ -1,69 +1,240 @@
-"""GitHub webhook handler."""
+"""Unified GitHub webhook: App installation + issues (coder agent)."""
 
-import hashlib
-import hmac
 import json
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
+from sqlalchemy import select
 
-from constants import token, GITHUB_WEBHOOK_SECRET
-from github import add_issue_reaction, comment_on_issue
-from agent import run_agent_on_issue
+from db import session_scope
 from logger import get_logger
+from model.tables import User, Organization, GitHubInstallation
+from services.github.coder_workflow import (
+    prepare_issue_for_coder_work,
+    run_coder_agent_for_opened_issue,
+)
+from services.github.issue_payload import IssueOpenedForCoder
+from services.github.webhook_signature import verify_github_webhook_signature
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/wh", tags=["webhooks"])
+router = APIRouter(prefix="/webhook", tags=["webhooks"])
 
 
-def _verify_signature(payload: bytes, signature: str | None) -> bool:
-    """Verify the GitHub webhook signature using HMAC-SHA256."""
-    if not GITHUB_WEBHOOK_SECRET:
-        logger.warning(
-            "GITHUB_WEBHOOK_SECRET not set - skipping signature verification"
+def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
+    installation = data.get("installation", {})
+    installation_id = installation.get("id")
+    account = installation.get("account", {})
+    account_login = account.get("login")
+    action = data.get("action")
+
+    account_type = account.get("type")
+    account_avatar_url = account.get("avatar_url")
+    permissions = installation.get("permissions", {})
+    repositories = data.get("repositories", [])
+
+    logger.info(
+        "GitHub App installed by: %s, installation_id: %s, type: %s",
+        account_login,
+        installation_id,
+        account_type,
+    )
+
+    with session_scope() as session:
+        stmt = select(User).where(User.github_login == account_login)
+        user = session.execute(stmt).scalar_one_or_none()
+
+        if user:
+            stmt = select(Organization).where(Organization.owner_user_id == user.id)
+            org = session.execute(stmt).scalar_one_or_none()
+
+            if org:
+                stmt = select(GitHubInstallation).where(
+                    GitHubInstallation.github_installation_id == installation_id
+                )
+                existing = session.execute(stmt).scalar_one_or_none()
+
+                if not existing:
+                    installation_record = GitHubInstallation(
+                        organization_id=org.id,
+                        github_installation_id=installation_id,
+                        account_name=account_login,
+                        account_type=account_type,
+                        account_avatar_url=account_avatar_url,
+                        permissions=permissions,
+                    )
+                    session.add(installation_record)
+                    org.github_installation_id = installation_id
+
+                    from model.tables import Repository
+
+                    for repo in repositories:
+                        repo_id = repo.get("id")
+                        repo_name = repo.get("name")
+                        repo_full_name = repo.get("full_name")
+                        repo_private = repo.get("private", False)
+                        repo_default_branch = repo.get("default_branch", "main")
+
+                        stmt = select(Repository).where(
+                            Repository.organization_id == org.id,
+                            Repository.github_repo_id == repo_id,
+                        )
+                        existing_repo = session.execute(stmt).scalar_one_or_none()
+
+                        if not existing_repo:
+                            owner = (
+                                repo_full_name.split("/")[0]
+                                if repo_full_name and "/" in repo_full_name
+                                else account_login
+                            )
+                            new_repo = Repository(
+                                organization_id=org.id,
+                                github_repo_id=repo_id,
+                                name=repo_name,
+                                owner=owner,
+                                private=repo_private,
+                                default_branch=repo_default_branch,
+                                active=True,
+                            )
+                            session.add(new_repo)
+
+                    session.commit()
+                    logger.info(
+                        "GitHub App installation stored for org: %s with %s repositories",
+                        org.name,
+                        len(repositories),
+                    )
+                else:
+                    logger.info(
+                        "GitHub App installation already exists: %s", installation_id
+                    )
+            else:
+                logger.warning("No organization found for user: %s", account_login)
+        else:
+            logger.warning("No user found with GitHub login: %s", account_login)
+
+    return {
+        "status": "received",
+        "action": action,
+        "installation_id": installation_id,
+    }
+
+
+def _installation_deleted(data: dict[str, Any]) -> dict[str, Any]:
+    installation = data.get("installation", {})
+    installation_id = installation.get("id")
+    action = data.get("action")
+
+    with session_scope() as session:
+        stmt = select(GitHubInstallation).where(
+            GitHubInstallation.github_installation_id == installation_id
         )
-        return True
-    if not signature or not signature.startswith("sha256="):
-        return False
-    expected = hmac.new(
-        GITHUB_WEBHOOK_SECRET.encode(),
-        payload,
-        hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(f"sha256={expected}", signature)
+        installation_record = session.execute(stmt).scalar_one_or_none()
+
+        if installation_record:
+            session.delete(installation_record)
+            session.commit()
+            logger.info("GitHub App installation deleted: %s", installation_id)
+
+    return {
+        "status": "received",
+        "action": action,
+        "installation_id": installation_id,
+    }
 
 
-def _handle_issue_sync(
-    owner: str,
-    repo_name: str,
-    full_name: str,
-    issue_number: int,
-    issue_title: str,
-    issue_body: str,
-) -> None:
-    """Run agent, create PR, comment on issue. Runs in a thread."""
+def _handle_installation_event(data: dict[str, Any]) -> dict[str, Any]:
+    action = data.get("action")
+    installation = data.get("installation", {})
+    installation_id = installation.get("id")
+
+    logger.info(
+        "GitHub App installation event: %s, installation_id: %s",
+        action,
+        installation_id,
+    )
+
+    if action == "created":
+        return _installation_created(data)
+    if action == "deleted":
+        return _installation_deleted(data)
+
+    return {"status": "ignored", "event": "installation", "action": action}
+
+
+def _handle_installation_repositories(data: dict[str, Any]) -> dict[str, Any]:
+    action = data.get("action")
+    installation = data.get("installation", {})
+    installation_id = installation.get("id")
+
+    logger.info(
+        "GitHub App repositories event: %s, installation_id: %s",
+        action,
+        installation_id,
+    )
+
+    return {
+        "status": "received",
+        "action": action,
+        "installation_id": installation_id,
+    }
+
+
+def _parse_coder_trigger(data: dict[str, Any]) -> IssueOpenedForCoder | None:
+    return IssueOpenedForCoder.from_issues_webhook(data)
+
+
+async def _handle_issues_event(
+    data: dict[str, Any],
+    background_tasks: BackgroundTasks,
+    x_github_delivery: str | None,
+) -> dict[str, Any]:
+    work = _parse_coder_trigger(data)
+
+    if work is None:
+        action = data.get("action")
+        logger.info(
+            "Ignoring issues event (not a coder trigger): action=%s", action
+        )
+        return {"status": "ignored", "action": action}
+
+    logger.info(
+        "Coder webhook delivery=%s action=%s issue=%s#%s",
+        x_github_delivery,
+        data.get("action"),
+        work.full_name,
+        work.issue_number,
+    )
+
     try:
-        run_agent_on_issue(
-            repo_url=f"https://github.com/{full_name}",
-            repo_name=repo_name,
-            issue_number=issue_number,
-            issue_title=issue_title,
-            issue_body=issue_body,
+        prepare_issue_for_coder_work(work)
+    except Exception:
+        logger.exception(
+            "prepare_issue_for_coder_work failed for %s#%s (delivery=%s)",
+            work.full_name,
+            work.issue_number,
+            x_github_delivery,
         )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to prepare issue (labels/reaction). Check token permissions.",
+        ) from None
 
-    except Exception as e:
-        logger.exception("Failed to handle issue #%s: %s", issue_number, e)
-        try:
-            comment_on_issue(
-                owner=owner,
-                repo=repo_name,
-                issue_number=issue_number,
-                token=token,
-                body=f"⚠️ Sorry, I encountered an error while working on this issue:\n\n```\n{e}\n```",
-            )
-        except Exception as comment_err:
-            logger.exception("Failed to post error comment: %s", comment_err)
+    logger.info(
+        "Coder triggered for issue #%s %s in %s",
+        work.issue_number,
+        work.issue_title,
+        work.full_name,
+    )
+
+    background_tasks.add_task(run_coder_agent_for_opened_issue, work)
+
+    return {
+        "status": "received",
+        "issue_number": work.issue_number,
+        "issue_title": work.issue_title,
+        "repository": work.full_name,
+    }
 
 
 @router.post("/github")
@@ -72,66 +243,29 @@ async def github_webhook(
     background_tasks: BackgroundTasks,
     x_github_event: str = Header(..., alias="X-GitHub-Event"),
     x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
+    x_github_delivery: str | None = Header(default=None, alias="X-GitHub-Delivery"),
 ):
     """
-    Receive GitHub webhooks.
+    Single endpoint for GitHub webhooks (GitHub App or repository).
 
-    Expects X-GitHub-Event: "issues" with action "opened" for new issue creation.
+    - ``installation`` / ``installation_repositories``: persist installation and repos.
+    - ``issues``: ``greagent:code`` label → coder agent (labels, PR, comment).
     """
     payload = await request.body()
 
-    if not _verify_signature(payload, x_hub_signature_256):
+    if not verify_github_webhook_signature(payload, x_hub_signature_256):
         raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
-    if x_github_event != "issues":
-        logger.info(f"Ignoring event type: {x_github_event}")
-        return {"status": "ignored", "event": x_github_event}
-
     data: dict[str, Any] = json.loads(payload)
-    action = data.get("action")
 
-    if action != "opened":
-        logger.info(f"Ignoring issues action: {action}")
-        return {"status": "ignored", "action": action}
+    if x_github_event == "installation":
+        return _handle_installation_event(data)
 
-    issue = data.get("issue", {})
-    repo = data.get("repository", {})
+    if x_github_event == "installation_repositories":
+        return _handle_installation_repositories(data)
 
-    owner = repo.get("owner", {}).get("login")
-    repo_name = repo.get("name")
-    full_name = repo.get("full_name", f"{owner}/{repo_name}")
-    issue_number = issue.get("number")
-    issue_title = issue.get("title")
-    issue_body = issue.get("body") or ""
+    if x_github_event == "issues":
+        return await _handle_issues_event(data, background_tasks, x_github_delivery)
 
-    add_issue_reaction(
-        owner=owner,
-        repo=repo_name,
-        issue_number=issue_number,
-        token=token,
-        reaction="eyes",
-    )
-
-    logger.info(
-        "Issue created: #%s %s in %s",
-        issue_number,
-        issue_title,
-        full_name,
-    )
-
-    background_tasks.add_task(
-        _handle_issue_sync,
-        owner=owner,
-        repo_name=repo_name,
-        full_name=full_name,
-        issue_number=issue_number,
-        issue_title=issue_title,
-        issue_body=issue_body,
-    )
-
-    return {
-        "status": "received",
-        "issue_number": issue_number,
-        "issue_title": issue_title,
-        "repository": full_name,
-    }
+    logger.info("Ignoring GitHub event: %s", x_github_event)
+    return {"status": "ignored", "event": x_github_event}

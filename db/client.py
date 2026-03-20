@@ -1,7 +1,7 @@
 """
 SQLAlchemy database client for Supabase PostgreSQL.
 
-Expects DATABASE_URL in environment (Supabase provides this in project settings).
+Connection URL comes from ``constants.get_database_url()`` (``DATABASE_URL`` env).
 Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
 """
 
@@ -9,6 +9,7 @@ import os
 from contextlib import contextmanager
 from typing import Generator
 
+from constants import get_database_url
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import (
@@ -23,18 +24,30 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 # Sync uses psycopg2 (postgresql:// or postgresql+psycopg2://)
 
 
-def _get_database_url() -> str:
-    url = os.environ.get("DATABASE_URL")
-    if not url:
+def get_psycopg_conninfo() -> str:
+    """
+    Connection URI for psycopg3 / LangGraph :class:`~langgraph.checkpoint.postgres.PostgresSaver`.
+
+    Reuses the same database host and credentials as SQLAlchemy but normalizes the URL to
+    libpq ``postgresql://`` form (LangGraph does not use SQLAlchemy drivers).
+
+    See `Persistence <https://docs.langchain.com/oss/python/langgraph/persistence>`_ and
+    `Add memory (Postgres) <https://docs.langchain.com/oss/python/langgraph/add-memory>`_.
+    """
+    url = get_database_url()
+    if url.startswith("sqlite"):
         raise RuntimeError(
-            "DATABASE_URL is not set. Get it from Supabase Dashboard → Project Settings → Database."
+            "LangGraph checkpointing requires PostgreSQL; DATABASE_URL must not be sqlite."
         )
-    
-    # If DATABASE_URL is set to "sqlite", use local SQLite database
-    if url == "sqlite":
-        return "sqlite:///./localcode.db"
-    
-    return url
+    for prefix in ("postgresql+psycopg2://", "postgresql+asyncpg://"):
+        if url.startswith(prefix):
+            rest = url.split("://", 1)[1]
+            return f"postgresql://{rest}"
+    if url.startswith(("postgresql://", "postgres://")):
+        return url
+    raise RuntimeError(
+        "DATABASE_URL must be a PostgreSQL URI (postgresql:// or postgres://)."
+    )
 
 
 def _url_for_async(url: str) -> str:
@@ -54,7 +67,7 @@ class Base(DeclarativeBase):
 
 def _create_sync_engine() -> Engine:
     return create_engine(
-        _get_database_url(),
+        get_database_url(),
         pool_pre_ping=True,
         pool_size=5,
         max_overflow=10,
@@ -94,7 +107,7 @@ def get_async_engine() -> AsyncEngine:
     global _async_engine
     if _async_engine is None:
         _async_engine = create_async_engine(
-            _url_for_async(_get_database_url()),
+            _url_for_async(get_database_url()),
             pool_pre_ping=True,
             pool_size=5,
             max_overflow=10,
@@ -140,4 +153,5 @@ __all__ = [
     "get_session_factory",
     "get_async_engine",
     "get_async_session_factory",
+    "get_psycopg_conninfo",
 ]

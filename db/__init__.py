@@ -1,10 +1,12 @@
 """Database client and utilities."""
 
+from constants import get_database_url
 from db.client import (
     Base,
     get_async_engine,
     get_async_session_factory,
     get_engine,
+    get_psycopg_conninfo,
     get_session_factory,
     session_scope,
 )
@@ -30,6 +32,8 @@ __all__ = [
     "get_session_factory",
     "get_async_engine",
     "get_async_session_factory",
+    "get_database_url",
+    "get_psycopg_conninfo",
     "register_models",
     "create_tables",
 ]

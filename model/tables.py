@@ -248,6 +248,9 @@ class Model(Base):
     token_usage: Mapped[list["TokenUsage"]] = relationship(
         "TokenUsage", back_populates="model"
     )
+    coder_workflow_usage: Mapped[list["CoderWorkflowUsage"]] = relationship(
+        "CoderWorkflowUsage", back_populates="model"
+    )
 
 
 class Agent(Base):
@@ -523,6 +526,61 @@ class TokenUsage(Base):
         "ReviewRun", back_populates="token_usage"
     )
     model: Mapped["Model"] = relationship("Model", back_populates="token_usage")
+
+
+class CoderWorkflowUsage(Base):
+    """
+    Token usage for one GitHub coder agent run (issue labelled ``greagent:code``).
+
+    Separate from ``TokenUsage`` (which is tied to PR review runs) so billing can
+    track coder workflows independently.
+    """
+
+    __tablename__ = "coder_workflow_usage"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid4_default,
+    )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    repository_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("repositories.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    github_full_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    issue_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    langgraph_thread_id: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False, default="ollama")
+    model_name: Mapped[str] = mapped_column(
+        String(256),
+        nullable=False,
+        doc="Primary model id for billing (comma-separated if multiple)",
+    )
+    model_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("models.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    usage_by_model: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    cost: Mapped[Decimal] = mapped_column(Numeric(18, 8), default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    organization: Mapped["Organization | None"] = relationship()
+    repository: Mapped["Repository | None"] = relationship()
+    model: Mapped["Model | None"] = relationship("Model", back_populates="coder_workflow_usage")
 
 
 # ---------------------------------------------------------------------------

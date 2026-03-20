@@ -16,6 +16,8 @@ dependencies = [
     "requests>=2.31.0",
     "uvicorn[standard]>=0.32.0",
     "pydantic>=2.12.5",
+    "langgraph-checkpoint-postgres>=3.0.5",
+    "psycopg[binary,pool]>=3.3",
 ]
 
 [project.scripts]

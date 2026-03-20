@@ -31,6 +31,7 @@ from model.schemas import (
 )
 from model.tables import (
     Agent as AgentTable,
+    CoderWorkflowUsage as CoderWorkflowUsageTable,
     GitHubEvent as GitHubEventTable,
     GitHubInstallation as GitHubInstallationTable,
     Model as ModelTable,
@@ -79,6 +80,7 @@ __all__ = [
     "User",
     # Tables (aliased to avoid collision with schema names)
     "AgentTable",
+    "CoderWorkflowUsageTable",
     "GitHubEventTable",
     "GitHubInstallationTable",
     "ModelTable",
