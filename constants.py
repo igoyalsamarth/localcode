@@ -27,9 +27,6 @@ def get_database_url() -> str:
     return url
 
 
-# GitHub API token for webhook operations
-token = os.environ["GITHUB_TOKEN"]
-
 # GitHub OAuth configuration (for user authentication)
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")

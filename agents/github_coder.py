@@ -17,6 +17,10 @@ from agents.checkpoint import coder_thread_id, get_checkpointer
 from agents.usage_callback import CoderLlmUsageCallbackHandler
 from constants import CODER_LLM_PROVIDER, get_coder_model_name
 from services.github.coder_usage import record_coder_workflow_usage
+from services.github.installation_token import (
+    get_api_token_for_repo,
+    installation_token_env,
+)
 from services.github.issue_payload import IssueOpenedForCoder
 
 instructions = """You are a NodeJS expert who knows how to code in TypeScript and all the CLI commands around it.
@@ -94,7 +98,11 @@ def get_github_coder_agent():
     return _agent
 
 
-def run_agent_on_issue(issue: IssueOpenedForCoder) -> None:
+def run_agent_on_issue(
+    issue: IssueOpenedForCoder,
+    *,
+    access_token: str | None = None,
+) -> None:
     """
     Run the GitHub coder agent for a triggered issue (queue label already moved to
     ``greagent:in-progress`` by the webhook). Clones the repo, implements, opens a PR,
@@ -103,8 +111,10 @@ def run_agent_on_issue(issue: IssueOpenedForCoder) -> None:
     Checkpoints are keyed by ``thread_id`` = ``github:{owner}/{repo}#issue-{n}`` so the
     same issue run can be resumed or replayed from stored LangGraph state.
     """
+    token_value = access_token or get_api_token_for_repo(issue.owner, issue.repo_name)
+
     full_name = issue.full_name
-    clone_url = f"https://x-access-token:$GITHUB_TOKEN@github.com/{full_name}.git"
+    clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
     prompt = f"""In the repository {issue.repo_url} (repo folder: repos/{issue.repo_name}):
 
 **Issue #{issue.issue_number}: {issue.issue_title}**
@@ -116,7 +126,7 @@ Please implement the requested changes:
 2. Create a new branch named exactly: agent/issue-{issue.issue_number}
 3. Make the required code changes
 4. Commit your changes (remember 🤖 in commit message)
-5. Before pushing, ensure the remote uses GITHUB_TOKEN: git remote set-url origin {clone_url}
+5. Before pushing, ensure the remote uses the app token (GH_TOKEN in the environment): git remote set-url origin {clone_url}
 6. Push the branch: git push origin agent/issue-{issue.issue_number}
 7. Raise a PR against the default branch with a relevant title and body (gh pr create [flags]), remember to mention in the body that this PR "Closes #{issue.issue_number}" so that the issue gets auto-closed when the PR is merged.
 8. Comment on the pull request with a short summary and a link to the issue.
@@ -132,52 +142,53 @@ Please implement the requested changes:
 
     agent = get_github_coder_agent()
     try:
-        for chunk in agent.stream(
-            {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ]
-            },
-            config,
-            stream_mode="messages",
-            subgraphs=True,
-            version="v2",
-        ):
-            if chunk["type"] == "messages":
-                token, metadata = chunk["data"]
+        with installation_token_env(token_value):
+            for chunk in agent.stream(
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": prompt,
+                        }
+                    ]
+                },
+                config,
+                stream_mode="messages",
+                subgraphs=True,
+                version="v2",
+            ):
+                if chunk["type"] == "messages":
+                    msg, _metadata = chunk["data"]
 
-                # Identify source: "main" or the subagent namespace segment
-                is_subagent = any(s.startswith("tools:") for s in chunk["ns"])
-                source = (
-                    next((s for s in chunk["ns"] if s.startswith("tools:")), "main")
-                    if is_subagent
-                    else "main"
-                )
-
-                # Tool call chunks (streaming tool invocations)
-                tool_call_chunks = getattr(token, "tool_call_chunks", None) or []
-                if tool_call_chunks:
-                    for tc in tool_call_chunks:
-                        if tc.get("name"):
-                            print(f"[{source}] Tool call: {tc['name']}")
-                        # Args stream in chunks - write them incrementally
-                        if tc.get("args"):
-                            print(tc["args"], end="", flush=True)
-
-                # Tool results
-                if token.type == "tool":
-                    print(
-                        f"[{source}] Tool result [{token.name}]: {str(token.content)[:150]}"
+                    # Identify source: "main" or the subagent namespace segment
+                    is_subagent = any(s.startswith("tools:") for s in chunk["ns"])
+                    source = (
+                        next((s for s in chunk["ns"] if s.startswith("tools:")), "main")
+                        if is_subagent
+                        else "main"
                     )
 
-                # Regular AI content (skip tool call messages)
-                if token.type == "ai" and token.content and not tool_call_chunks:
-                    print(token.content, end="", flush=True)
+                    # Tool call chunks (streaming tool invocations)
+                    tool_call_chunks = getattr(msg, "tool_call_chunks", None) or []
+                    if tool_call_chunks:
+                        for tc in tool_call_chunks:
+                            if tc.get("name"):
+                                print(f"[{source}] Tool call: {tc['name']}")
+                            # Args stream in chunks - write them incrementally
+                            if tc.get("args"):
+                                print(tc["args"], end="", flush=True)
 
-            print()
+                    # Tool results
+                    if msg.type == "tool":
+                        print(
+                            f"[{source}] Tool result [{msg.name}]: {str(msg.content)[:150]}"
+                        )
+
+                    # Regular AI content (skip tool call messages)
+                    if msg.type == "ai" and msg.content and not tool_call_chunks:
+                        print(msg.content, end="", flush=True)
+
+                print()
     finally:
         record_coder_workflow_usage(
             issue,

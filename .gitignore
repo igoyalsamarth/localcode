@@ -11,3 +11,4 @@ wheels/
 /repos
 /workspace
 .env
+*.pem

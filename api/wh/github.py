@@ -16,6 +16,7 @@ from services.github.coder_workflow import (
     run_coder_agent_for_opened_issue,
 )
 from services.github.issue_payload import IssueOpenedForCoder
+from services.github.installation_token import get_api_token_for_installation
 from services.github.repository_bootstrap import (
     ensure_default_coder_repository_agent,
     upsert_repository_from_github,
@@ -116,17 +117,28 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
                         org.name,
                         len(repositories),
                     )
-                    for repo in repositories:
-                        full_name = repo.get("full_name") or ""
-                        if "/" not in full_name:
-                            continue
-                        owner, name = full_name.split("/", 1)
-                        try:
-                            ensure_greagent_labels_on_repository(owner, name)
-                        except Exception:
-                            logger.exception(
-                                "Failed to ensure greagent labels for %s", full_name
-                            )
+                    try:
+                        install_tok = get_api_token_for_installation(int(installation_id))
+                    except Exception:
+                        install_tok = None
+                        logger.exception(
+                            "No installation token for labels (installation_id=%s)",
+                            installation_id,
+                        )
+                    if install_tok:
+                        for repo in repositories:
+                            full_name = repo.get("full_name") or ""
+                            if "/" not in full_name:
+                                continue
+                            owner, name = full_name.split("/", 1)
+                            try:
+                                ensure_greagent_labels_on_repository(
+                                    owner, name, access_token=install_tok
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "Failed to ensure greagent labels for %s", full_name
+                                )
                 else:
                     logger.info(
                         "GitHub App installation already exists: %s", installation_id
@@ -227,17 +239,27 @@ def _handle_installation_repositories(data: dict[str, Any]) -> dict[str, Any]:
                     installation_id,
                 )
 
-        for repo in repos_added:
-            full_name = repo.get("full_name") or ""
-            if "/" not in full_name:
-                continue
-            owner, name = full_name.split("/", 1)
-            try:
-                ensure_greagent_labels_on_repository(owner, name)
-            except Exception:
-                logger.exception(
-                    "Failed to ensure greagent labels for %s", full_name
-                )
+        try:
+            install_tok = get_api_token_for_installation(int(installation_id))
+        except Exception:
+            install_tok = None
+            logger.exception(
+                "No installation token for labels (installation_id=%s)", installation_id
+            )
+        if install_tok:
+            for repo in repos_added:
+                full_name = repo.get("full_name") or ""
+                if "/" not in full_name:
+                    continue
+                owner, name = full_name.split("/", 1)
+                try:
+                    ensure_greagent_labels_on_repository(
+                        owner, name, access_token=install_tok
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to ensure greagent labels for %s", full_name
+                    )
 
     return {
         "status": "received",

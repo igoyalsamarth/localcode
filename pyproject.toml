@@ -18,6 +18,7 @@ dependencies = [
     "pydantic>=2.12.5",
     "langgraph-checkpoint-postgres>=3.0.5",
     "psycopg[binary,pool]>=3.3",
+    "pyjwt[crypto]>=2.8.0",
 ]
 
 [project.scripts]
