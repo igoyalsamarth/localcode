@@ -15,13 +15,17 @@ from langchain_ollama import ChatOllama
 
 from agents.checkpoint import coder_thread_id, get_checkpointer
 from agents.usage_callback import CoderLlmUsageCallbackHandler
-from constants import CODER_LLM_PROVIDER, get_coder_model_name
+from constants import CODER_LLM_PROVIDER, get_coder_model_name, git_identity_from_env
+from logger import get_logger
 from services.github.coder_usage import record_coder_workflow_usage
 from services.github.installation_token import (
     get_api_token_for_repo,
+    github_bot_git_identity,
     installation_token_env,
 )
 from services.github.issue_payload import IssueOpenedForCoder
+
+logger = get_logger(__name__)
 
 instructions = """You are a NodeJS expert who knows how to code in TypeScript and all the CLI commands around it.
 
@@ -66,15 +70,11 @@ cd /repo/example
 Remember to add a robo emoji 🤖 in every commit message of yours in the starting.
 
 Check if the repo exists before cloning, if it does not, then you are free to clone.
+
+Commits must use the GitHub App bot identity (GIT_AUTHOR_* / GIT_COMMITTER_* are set in the environment). Do **not** run ``git config user.email`` to a personal address — that would attribute commits to a human instead of the app.
 """
 
 Path("workspace/repos").mkdir(parents=True, exist_ok=True)
-
-backend = LocalShellBackend(
-    root_dir="./workspace",
-    virtual_mode=True,
-    inherit_env=True,
-)
 
 llm = ChatOllama(
     model=get_coder_model_name(),
@@ -86,9 +86,20 @@ _agent = None
 
 
 def get_github_coder_agent():
-    """Lazy init so ``constants`` / ``DATABASE_URL`` are loaded before the graph is built."""
+    """
+    Build the deep agent graph.
+
+    ``LocalShellBackend`` snapshots ``os.environ`` at construction time. It must be
+    created **after** ``installation_token_env`` sets ``GH_TOKEN`` (see
+    ``run_agent_on_issue``), so shell tools see the installation token.
+    """
     global _agent
     if _agent is None:
+        backend = LocalShellBackend(
+            root_dir="./workspace",
+            virtual_mode=True,
+            inherit_env=True,
+        )
         _agent = create_deep_agent(
             model=llm,
             system_prompt=instructions,
@@ -113,6 +124,24 @@ def run_agent_on_issue(
     """
     token_value = access_token or get_api_token_for_repo(issue.owner, issue.repo_name)
 
+    env_identity = git_identity_from_env()
+    if env_identity:
+        (an, ae), (cn, ce) = env_identity
+        git_author_pair = (an, ae)
+        git_committer_pair = (
+            (cn, ce) if (cn != an or ce != ae) else None
+        )
+    else:
+        api_id = github_bot_git_identity(token_value)
+        git_author_pair = api_id
+        git_committer_pair = None
+        if not api_id:
+            logger.warning(
+                "Could not set GIT_AUTHOR_* for bot commits; set GIT_AUTHOR_NAME and "
+                "GIT_AUTHOR_EMAIL in .env or ensure GET /user works. "
+                "Otherwise git may use local user.name/email."
+            )
+
     full_name = issue.full_name
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
     prompt = f"""In the repository {issue.repo_url} (repo folder: repos/{issue.repo_name}):
@@ -135,14 +164,26 @@ Please implement the requested changes:
 """
     thread_id = coder_thread_id(issue.full_name, issue.issue_number)
     usage_cb = CoderLlmUsageCallbackHandler()
+    # Graph `stream(..., callbacks=[...])` does not reach subagent `task` tools:
+    # deepagents invokes subagents with `subagent.invoke(state)` and no config.
+    # Model-level callbacks still merge via CallbackManager.configure(..., self.callbacks),
+    # so attach here to count main + subagent LLM calls.
+    llm.callbacks = [usage_cb]
     config = {
         "configurable": {"thread_id": thread_id},
         "callbacks": [usage_cb],
     }
 
-    agent = get_github_coder_agent()
+    global _agent
+    _agent = None
+
     try:
-        with installation_token_env(token_value):
+        with installation_token_env(
+            token_value,
+            git_author=git_author_pair,
+            git_committer=git_committer_pair,
+        ):
+            agent = get_github_coder_agent()
             for chunk in agent.stream(
                 {
                     "messages": [
@@ -190,6 +231,8 @@ Please implement the requested changes:
 
                 print()
     finally:
+        _agent = None
+        llm.callbacks = None
         record_coder_workflow_usage(
             issue,
             thread_id,

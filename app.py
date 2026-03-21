@@ -8,17 +8,22 @@ coder agent: in-progress / done / error labels, PR, and issue comment.
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
-load_dotenv()
-
 from agents.checkpoint import init_checkpointer, shutdown_checkpointer
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from db import create_tables
-from api import health_router, auth_router, onboarding_router, connections_router, agents_router
+from api import (
+    health_router,
+    auth_router,
+    onboarding_router,
+    connections_router,
+    agents_router,
+)
 from api.wh import github_router
 from logger import get_logger
 
+load_dotenv()
 logger = get_logger(__name__)
 
 
@@ -37,7 +42,7 @@ app = FastAPI(
     description="Receives GitHub webhooks and triggers the agent on new issues",
     version="0.1.0",
     lifespan=lifespan,
-    reload=True,  # Enable auto-reload in development
+    reload=False,
 )
 
 # Configure CORS for frontend requests

@@ -4,6 +4,8 @@ from urllib.parse import quote
 
 import requests
 
+from constants import GITHUB_REST_API_VERSION
+
 
 def add_issue_reaction(
     owner: str, repo: str, issue_number: int, token: str, reaction: str = "eyes"
@@ -36,6 +38,7 @@ def add_issue_reaction(
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "Content-Type": "application/json",
+        "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
     }
 
     payload = {"content": reaction}
@@ -56,6 +59,7 @@ def comment_on_issue(owner: str, repo: str, issue_number: int, token: str, body:
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "Content-Type": "application/json",
+        "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
     }
 
     payload = {"body": body}
@@ -70,6 +74,7 @@ def _issue_headers(token: str) -> dict[str, str]:
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "Content-Type": "application/json",
+        "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
     }
 
 

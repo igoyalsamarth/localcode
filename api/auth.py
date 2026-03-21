@@ -11,6 +11,7 @@ from constants import (
     GITHUB_CLIENT_SECRET,
     GITHUB_REDIRECT_URI,
     CLIENT_URL,
+    GITHUB_REST_API_VERSION,
 )
 from db import session_scope
 from services import create_or_update_user, get_or_create_organization
@@ -99,7 +100,8 @@ async def github_callback(code: str = Query(...), state: Optional[str] = Query(N
             "https://api.github.com/user",
             headers={
                 "Authorization": f"Bearer {access_token}",
-                "Accept": "application/vnd.github.v3+json",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
             },
             timeout=10,
         )
@@ -117,7 +119,8 @@ async def github_callback(code: str = Query(...), state: Optional[str] = Query(N
                 "https://api.github.com/user/emails",
                 headers={
                     "Authorization": f"Bearer {access_token}",
-                    "Accept": "application/vnd.github.v3+json",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
                 },
                 timeout=10,
             )

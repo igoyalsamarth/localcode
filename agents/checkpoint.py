@@ -17,6 +17,8 @@ from __future__ import annotations
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.types import Checkpointer
 from logger import get_logger
+from psycopg import Connection
+from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from db.client import get_psycopg_conninfo
@@ -42,6 +44,17 @@ def init_checkpointer() -> Checkpointer:
         return _checkpointer
 
     conninfo = get_psycopg_conninfo()
+
+    # Migrations use CREATE INDEX CONCURRENTLY — must not run inside a transaction.
+    # LangGraph's pool path uses implicit transactions; use autocommit for setup only.
+    with Connection.connect(
+        conninfo,
+        autocommit=True,
+        prepare_threshold=0,
+        row_factory=dict_row,
+    ) as setup_conn:
+        PostgresSaver(setup_conn).setup()
+
     _pool = ConnectionPool(
         conninfo=conninfo,
         open=True,

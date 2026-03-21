@@ -19,6 +19,7 @@ from constants import (
     GITHUB_APP_CLIENT_ID,
     GITHUB_APP_ID,
     GITHUB_APP_PRIVATE_KEY,
+    GITHUB_REST_API_VERSION,
 )
 from db import session_scope
 from logger import get_logger
@@ -94,7 +95,7 @@ def get_installation_access_token(installation_id: int) -> str:
         headers={
             "Authorization": f"Bearer {jwt_token}",
             "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
+            "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
         },
         timeout=60,
     )
@@ -158,15 +159,65 @@ def get_api_token_for_repo(owner: str, repo_name: str) -> str:
     return get_installation_access_token(iid)
 
 
-@contextmanager
-def installation_token_env(token: str):
+def github_bot_git_identity(access_token: str) -> tuple[str, str] | None:
     """
-    Expose the installation token to subprocesses as ``GH_TOKEN`` (``gh`` / scripts).
+    Return ``(login, noreply_email)`` for the authenticated identity (installation token → app bot).
 
-    GitHub CLI reads ``GH_TOKEN``; we avoid the old ``GITHUB_TOKEN`` PAT convention.
+    Git uses ``GIT_AUTHOR_*`` / ``GIT_COMMITTER_*`` so commits attribute to the bot, not
+    the installing user.
     """
+    try:
+        r = requests.get(
+            f"{_GITHUB_API}/user",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        data = r.json()
+        login = str(data["login"])
+        uid = int(data["id"])
+        email = f"{uid}+{login}@users.noreply.github.com"
+        return login, email
+    except Exception:
+        logger.exception("Could not fetch GitHub bot identity (GET /user)")
+        return None
+
+
+@contextmanager
+def installation_token_env(
+    token: str,
+    *,
+    git_author: tuple[str, str] | None = None,
+    git_committer: tuple[str, str] | None = None,
+):
+    """
+    Expose the installation token to subprocesses as ``GH_TOKEN`` (``gh`` / ``git``).
+
+    Optionally set ``GIT_AUTHOR_*`` / ``GIT_COMMITTER_*`` so ``git commit`` uses the
+    GitHub App bot (see :func:`github_bot_git_identity` or ``constants.git_identity_from_env``).
+    """
+    prev_git: dict[str, str | None] = {}
+    git_keys = (
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    )
     previous = os.environ.get("GH_TOKEN")
     os.environ["GH_TOKEN"] = token
+    if git_author:
+        an, ae = git_author
+        cn, ce = git_committer if git_committer is not None else (an, ae)
+        for k in git_keys:
+            prev_git[k] = os.environ.get(k)
+        os.environ["GIT_AUTHOR_NAME"] = an
+        os.environ["GIT_COMMITTER_NAME"] = cn
+        os.environ["GIT_AUTHOR_EMAIL"] = ae
+        os.environ["GIT_COMMITTER_EMAIL"] = ce
     try:
         yield
     finally:
@@ -174,3 +225,10 @@ def installation_token_env(token: str):
             os.environ.pop("GH_TOKEN", None)
         else:
             os.environ["GH_TOKEN"] = previous
+        if git_author:
+            for k in git_keys:
+                v = prev_git.get(k)
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
