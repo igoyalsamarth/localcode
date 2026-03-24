@@ -9,9 +9,10 @@ Usage:
 """
 
 import logging
-import os
 import sys
 from typing import Optional
+
+from constants import get_log_level as _get_log_level
 
 
 _configured = False
@@ -30,7 +31,7 @@ def configure_logging(level: Optional[str] = None) -> None:
     if _configured:
         return
     
-    log_level = level or os.environ.get("LOG_LEVEL", "INFO").upper()
+    log_level = level or _get_log_level()
     
     logging.basicConfig(
         level=getattr(logging, log_level, logging.INFO),

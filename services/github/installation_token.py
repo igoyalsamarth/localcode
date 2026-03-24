@@ -10,6 +10,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 import jwt
 import requests
@@ -19,6 +20,7 @@ from constants import (
     GITHUB_APP_CLIENT_ID,
     GITHUB_APP_ID,
     GITHUB_APP_PRIVATE_KEY,
+    GITHUB_APP_SLUG,
     GITHUB_REST_API_VERSION,
 )
 from db import session_scope
@@ -99,6 +101,14 @@ def get_installation_access_token(installation_id: int) -> str:
         },
         timeout=60,
     )
+    if not r.ok:
+        logger.error(
+            "GitHub POST %s failed: status=%s installation_id=%s body=%s",
+            url,
+            r.status_code,
+            installation_id,
+            (r.text or "")[:4000],
+        )
     r.raise_for_status()
     data = r.json()
     tok = data["token"]
@@ -108,6 +118,40 @@ def get_installation_access_token(installation_id: int) -> str:
     with _lock:
         _cache[installation_id] = (tok, exp)
     return tok
+
+
+def _sync_org_installation_id_from_webhook(
+    owner: str, repo_name: str, webhook_installation_id: int
+) -> None:
+    """If the DB has a different installation id than the webhook, update the org row."""
+    try:
+        with session_scope() as session:
+            stmt = (
+                select(Organization)
+                .join(Repository, Repository.organization_id == Organization.id)
+                .where(
+                    Repository.owner == owner,
+                    Repository.name == repo_name,
+                )
+            )
+            org = session.execute(stmt).scalar_one_or_none()
+            if org is None:
+                return
+            if org.github_installation_id == webhook_installation_id:
+                return
+            logger.info(
+                "Syncing github_installation_id for org %s: DB had %s, webhook has %s",
+                org.id,
+                org.github_installation_id,
+                webhook_installation_id,
+            )
+            org.github_installation_id = webhook_installation_id
+    except Exception:
+        logger.exception(
+            "Could not sync github_installation_id from webhook for %s/%s",
+            owner,
+            repo_name,
+        )
 
 
 def get_github_installation_id_for_repo(owner: str, repo_name: str) -> int | None:
@@ -159,31 +203,74 @@ def get_api_token_for_repo(owner: str, repo_name: str) -> str:
     return get_installation_access_token(iid)
 
 
-def github_bot_git_identity(access_token: str) -> tuple[str, str] | None:
+def get_api_token_for_coder_issue(
+    owner: str,
+    repo_name: str,
+    *,
+    github_installation_id: int | None = None,
+) -> str:
     """
-    Return ``(login, noreply_email)`` for the authenticated identity (installation token → app bot).
+    Mint an installation token for coder flows.
 
-    Git uses ``GIT_AUTHOR_*`` / ``GIT_COMMITTER_*`` so commits attribute to the bot, not
-    the installing user.
+    Prefer ``github_installation_id`` from the ``issues`` webhook (``installation.id``).
+    That value is authoritative; the DB can be stale after reinstall or migration.
     """
+    if not app_credentials_configured():
+        raise RuntimeError(
+            "GITHUB_APP_PRIVATE_KEY and GITHUB_APP_CLIENT_ID (or GITHUB_APP_ID) are required"
+        )
+    if github_installation_id is not None:
+        token = get_api_token_for_installation(github_installation_id)
+        _sync_org_installation_id_from_webhook(owner, repo_name, github_installation_id)
+        return token
+    return get_api_token_for_repo(owner, repo_name)
+
+
+def github_bot_git_identity(_access_token: str | None = None) -> tuple[str, str] | None:
+    """
+    Return ``(login, noreply_email)`` for this GitHub App's bot user.
+
+    **Installation access tokens cannot use** ``GET /user`` (GitHub returns 403). We resolve
+    identity via JWT ``GET /app`` (or ``GITHUB_APP_SLUG``) and public ``GET /users/{slug}[bot]``.
+    """
+    del _access_token  # kept for call-site compatibility; not used
+    if not app_credentials_configured():
+        return None
     try:
-        r = requests.get(
-            f"{_GITHUB_API}/user",
+        slug = (GITHUB_APP_SLUG or "").strip()
+        if not slug:
+            jwt_token = create_app_jwt()
+            r = requests.get(
+                f"{_GITHUB_API}/app",
+                headers={
+                    "Authorization": f"Bearer {jwt_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
+                },
+                timeout=30,
+            )
+            r.raise_for_status()
+            slug = str(r.json()["slug"])
+
+        login = f"{slug}[bot]"
+        r2 = requests.get(
+            f"{_GITHUB_API}/users/{quote(login, safe='')}",
             headers={
-                "Authorization": f"Bearer {access_token}",
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
             },
             timeout=30,
         )
-        r.raise_for_status()
-        data = r.json()
-        login = str(data["login"])
-        uid = int(data["id"])
-        email = f"{uid}+{login}@users.noreply.github.com"
-        return login, email
+        r2.raise_for_status()
+        bot = r2.json()
+        canonical = str(bot["login"])
+        uid = int(bot["id"])
+        email = f"{uid}+{canonical}@users.noreply.github.com"
+        return canonical, email
     except Exception:
-        logger.exception("Could not fetch GitHub bot identity (GET /user)")
+        logger.exception(
+            "Could not resolve GitHub App bot identity (JWT GET /app or GET /users/[bot])"
+        )
         return None
 
 

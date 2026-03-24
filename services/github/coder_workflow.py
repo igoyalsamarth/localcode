@@ -14,7 +14,10 @@ from services.github.client import (
     remove_issue_label,
 )
 from services.github.coder_labels import CODE, DONE, ERROR, IN_PROGRESS
-from services.github.installation_token import get_api_token_for_repo
+from services.github.installation_token import (
+    get_api_token_for_coder_issue,
+    get_api_token_for_repo,
+)
 from services.github.issue_payload import IssueOpenedForCoder
 
 logger = get_logger(__name__)
@@ -94,7 +97,11 @@ def prepare_issue_for_coder_work(work: IssueOpenedForCoder) -> None:
 
     Call this synchronously in the webhook before enqueueing the background agent run.
     """
-    tok = get_api_token_for_repo(work.owner, work.repo_name)
+    tok = get_api_token_for_coder_issue(
+        work.owner,
+        work.repo_name,
+        github_installation_id=work.github_installation_id,
+    )
     _ensure_greagent_labels_exist(work, tok)
     _transition_queue_to_in_progress(work, tok)
     add_issue_reaction(
@@ -112,7 +119,11 @@ def run_coder_agent_for_opened_issue(work: IssueOpenedForCoder) -> None:
 
     On success: ``greagent:done``. On failure: ``greagent:error`` + comment.
     """
-    tok = get_api_token_for_repo(work.owner, work.repo_name)
+    tok = get_api_token_for_coder_issue(
+        work.owner,
+        work.repo_name,
+        github_installation_id=work.github_installation_id,
+    )
     try:
         run_agent_on_issue(work, access_token=tok)
     except Exception as e:

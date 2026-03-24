@@ -19,7 +19,19 @@ dependencies = [
     "langgraph-checkpoint-postgres>=3.0.5",
     "psycopg[binary,pool]>=3.3",
     "pyjwt[crypto]>=2.8.0",
+    "langchain-daytona>=0.0.4",
+    "daytona>=0.153.0",
+    "dramatiq[rabbitmq]>=1.17.0",
 ]
 
 [project.scripts]
 serve = "main:main"
+api-backend = "services_entrypoints.api_backend:main"
+worker = "services_entrypoints.worker:main"
+
+[tool.setuptools]
+packages = ["agents", "api", "db", "model", "task_queue", "services", "services_entrypoints"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

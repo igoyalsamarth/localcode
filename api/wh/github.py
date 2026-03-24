@@ -3,7 +3,7 @@
 import json
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request
 from sqlalchemy import select
 
 from db import session_scope
@@ -13,7 +13,6 @@ from services.github.coder_trigger import resolve_coder_issue_work
 from services.github.coder_workflow import (
     ensure_greagent_labels_on_repository,
     prepare_issue_for_coder_work,
-    run_coder_agent_for_opened_issue,
 )
 from services.github.issue_payload import IssueOpenedForCoder
 from services.github.installation_token import get_api_token_for_installation
@@ -22,6 +21,7 @@ from services.github.repository_bootstrap import (
     upsert_repository_from_github,
 )
 from services.github.webhook_signature import verify_github_webhook_signature
+from task_queue.tasks import process_github_issue
 
 logger = get_logger(__name__)
 
@@ -118,7 +118,9 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
                         len(repositories),
                     )
                     try:
-                        install_tok = get_api_token_for_installation(int(installation_id))
+                        install_tok = get_api_token_for_installation(
+                            int(installation_id)
+                        )
                     except Exception:
                         install_tok = None
                         logger.exception(
@@ -275,16 +277,13 @@ def _parse_coder_trigger(data: dict[str, Any]) -> IssueOpenedForCoder | None:
 
 async def _handle_issues_event(
     data: dict[str, Any],
-    background_tasks: BackgroundTasks,
     x_github_delivery: str | None,
 ) -> dict[str, Any]:
     work = _parse_coder_trigger(data)
 
     if work is None:
         action = data.get("action")
-        logger.info(
-            "Ignoring issues event (not a coder trigger): action=%s", action
-        )
+        logger.info("Ignoring issues event (not a coder trigger): action=%s", action)
         return {"status": "ignored", "action": action}
 
     logger.info(
@@ -310,16 +309,27 @@ async def _handle_issues_event(
         ) from None
 
     logger.info(
-        "Coder triggered for issue #%s %s in %s",
+        "Enqueuing coder task for issue #%s %s in %s",
         work.issue_number,
         work.issue_title,
         work.full_name,
     )
 
-    background_tasks.add_task(run_coder_agent_for_opened_issue, work)
+    issue_data = {
+        "owner": work.owner,
+        "repo_name": work.repo_name,
+        "repo_url": work.repo_url,
+        "full_name": work.full_name,
+        "issue_number": work.issue_number,
+        "issue_title": work.issue_title,
+        "issue_body": work.issue_body,
+        "github_installation_id": work.github_installation_id,
+    }
+
+    process_github_issue.send(issue_data)
 
     return {
-        "status": "received",
+        "status": "enqueued",
         "issue_number": work.issue_number,
         "issue_title": work.issue_title,
         "repository": work.full_name,
@@ -329,7 +339,6 @@ async def _handle_issues_event(
 @router.post("/github")
 async def github_webhook(
     request: Request,
-    background_tasks: BackgroundTasks,
     x_github_event: str = Header(..., alias="X-GitHub-Event"),
     x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
     x_github_delivery: str | None = Header(default=None, alias="X-GitHub-Delivery"),
@@ -338,8 +347,7 @@ async def github_webhook(
     Single endpoint for GitHub webhooks (GitHub App or repository).
 
     - ``installation`` / ``installation_repositories``: persist installation and repos.
-    - ``issues``: coder agent per ``RepositoryAgent`` (auto: ``opened``/``reopened``;
-      label mode: ``greagent:code`` on ``labeled``).
+    - ``issues``: enqueue coder agent task to RabbitMQ via Dramatiq (processed by workers).
     """
     payload = await request.body()
 
@@ -355,7 +363,7 @@ async def github_webhook(
         return _handle_installation_repositories(data)
 
     if x_github_event == "issues":
-        return await _handle_issues_event(data, background_tasks, x_github_delivery)
+        return await _handle_issues_event(data, x_github_delivery)
 
     logger.info("Ignoring GitHub event: %s", x_github_event)
     return {"status": "ignored", "event": x_github_event}

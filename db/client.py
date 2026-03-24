@@ -5,11 +5,10 @@ Connection URL comes from ``constants.get_database_url()`` (``DATABASE_URL`` env
 Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
 """
 
-import os
 from contextlib import contextmanager
 from typing import Generator
 
-from constants import get_database_url
+from constants import get_database_url, get_sql_echo
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import (
@@ -71,7 +70,7 @@ def _create_sync_engine() -> Engine:
         pool_pre_ping=True,
         pool_size=5,
         max_overflow=10,
-        echo=os.environ.get("SQL_ECHO", "").lower() in ("1", "true"),
+        echo=get_sql_echo(),
     )
 
 
@@ -111,7 +110,7 @@ def get_async_engine() -> AsyncEngine:
             pool_pre_ping=True,
             pool_size=5,
             max_overflow=10,
-            echo=os.environ.get("SQL_ECHO", "").lower() in ("1", "true"),
+            echo=get_sql_echo(),
         )
     return _async_engine
 

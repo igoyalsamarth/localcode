@@ -27,6 +27,10 @@ class IssueOpenedForCoder(BaseModel):
     issue_number: int
     issue_title: str
     issue_body: str = ""
+    github_installation_id: int | None = Field(
+        default=None,
+        description="installation.id from the webhook (preferred when minting app tokens)",
+    )
 
     @classmethod
     def from_github_issues_event(cls, data: dict[str, Any]) -> "IssueOpenedForCoder | None":
@@ -49,6 +53,13 @@ class IssueOpenedForCoder(BaseModel):
         body = issue.get("body")
         issue_body = body if isinstance(body, str) else ""
 
+        raw_inst = (data.get("installation") or {}).get("id")
+        github_installation_id: int | None
+        try:
+            github_installation_id = int(raw_inst) if raw_inst is not None else None
+        except (TypeError, ValueError):
+            github_installation_id = None
+
         return cls(
             owner=owner,
             repo_name=repo_name,
@@ -57,6 +68,7 @@ class IssueOpenedForCoder(BaseModel):
             issue_number=int(issue_number),
             issue_title=str(issue_title),
             issue_body=issue_body,
+            github_installation_id=github_installation_id,
         )
 
     @classmethod
