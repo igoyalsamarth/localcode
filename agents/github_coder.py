@@ -37,7 +37,7 @@ from services.github.coder_daytona import (
     stop_sandbox,
 )
 from services.github.installation_token import (
-    get_api_token_for_coder_issue,
+    get_installation_token_for_repo,
     github_bot_git_identity,
     installation_token_env,
 )
@@ -201,7 +201,7 @@ def run_agent_on_issue(
     Checkpoints are keyed by ``thread_id`` = ``github:{owner}/{repo}#issue-{n}`` so the
     same issue run can be resumed or replayed from stored LangGraph state.
     """
-    token_value = access_token or get_api_token_for_coder_issue(
+    token_value = access_token or get_installation_token_for_repo(
         issue.owner,
         issue.repo_name,
         github_installation_id=issue.github_installation_id,

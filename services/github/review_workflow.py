@@ -14,8 +14,8 @@ from services.github.client import (
 )
 from services.github.coder_labels import ERROR, REVIEW, REVIEWED
 from services.github.installation_token import (
-    get_api_token_for_coder_issue,
     get_api_token_for_repo,
+    get_installation_token_for_repo,
 )
 from services.github.pr_payload import PROpenedForReview
 
@@ -29,8 +29,10 @@ def ensure_greagent_review_labels_on_repository(
     access_token: str | None = None,
 ) -> None:
     """Create the ``greagent:review``, ``greagent:reviewed``, and ``greagent:error`` labels on the repo if they are missing."""
-    tok = access_token if access_token is not None else get_api_token_for_repo(
-        owner, repo_name
+    tok = (
+        access_token
+        if access_token is not None
+        else get_api_token_for_repo(owner, repo_name)
     )
     for name in (REVIEW, REVIEWED, ERROR):
         ensure_repo_label_exists(owner, repo_name, tok, name)
@@ -44,13 +46,9 @@ def _ensure_greagent_review_labels_exist(
         ensure_repo_label_exists(work.owner, work.repo_name, access_token, name)
 
 
-def _transition_review_to_reviewed(
-    work: PROpenedForReview, access_token: str
-) -> None:
+def _transition_review_to_reviewed(work: PROpenedForReview, access_token: str) -> None:
     """Replace ``greagent:review`` with ``greagent:reviewed``."""
-    remove_pr_label(
-        work.owner, work.repo_name, work.pr_number, REVIEW, access_token
-    )
+    remove_pr_label(work.owner, work.repo_name, work.pr_number, REVIEW, access_token)
     add_pr_labels(
         work.owner,
         work.repo_name,
@@ -60,13 +58,9 @@ def _transition_review_to_reviewed(
     )
 
 
-def _transition_review_to_error(
-    work: PROpenedForReview, access_token: str
-) -> None:
+def _transition_review_to_error(work: PROpenedForReview, access_token: str) -> None:
     """Replace ``greagent:review`` with ``greagent:error``."""
-    remove_pr_label(
-        work.owner, work.repo_name, work.pr_number, REVIEW, access_token
-    )
+    remove_pr_label(work.owner, work.repo_name, work.pr_number, REVIEW, access_token)
     add_pr_labels(
         work.owner,
         work.repo_name,
@@ -82,7 +76,7 @@ def prepare_pr_for_review_work(work: PROpenedForReview) -> None:
 
     Call this synchronously in the webhook before enqueueing the background agent run.
     """
-    tok = get_api_token_for_coder_issue(
+    tok = get_installation_token_for_repo(
         work.owner,
         work.repo_name,
         github_installation_id=work.github_installation_id,
@@ -96,7 +90,7 @@ def run_review_agent_for_opened_pr(work: PROpenedForReview) -> None:
 
     On success: ``greagent:reviewed``. On failure: ``greagent:error`` + error comment.
     """
-    tok = get_api_token_for_coder_issue(
+    tok = get_installation_token_for_repo(
         work.owner,
         work.repo_name,
         github_installation_id=work.github_installation_id,
