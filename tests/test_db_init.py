@@ -22,24 +22,31 @@ class TestDatabaseInit:
         # Check for some expected tables
         assert "users" in table_names or len(table_names) > 0
 
-    def test_create_tables_calls_create_all(self):
+    def test_create_tables_calls_create_all(self, mock_env):
         """Test create_tables calls Base.metadata.create_all."""
         from db import create_tables, Base
         
-        with patch.object(Base.metadata, "create_all") as mock_create_all:
-            create_tables()
+        with patch("db.get_engine") as mock_get_engine:
+            mock_engine = MagicMock()
+            mock_get_engine.return_value = mock_engine
             
-            # Verify create_all was called with an engine
-            mock_create_all.assert_called_once()
-            call_args = mock_create_all.call_args
-            assert "bind" in call_args.kwargs or len(call_args.args) > 0
+            with patch.object(Base.metadata, "create_all") as mock_create_all:
+                create_tables()
+                
+                # Verify create_all was called with an engine
+                mock_create_all.assert_called_once()
+                call_args = mock_create_all.call_args
+                assert "bind" in call_args.kwargs or len(call_args.args) > 0
 
-    def test_create_tables_registers_models_first(self):
+    def test_create_tables_registers_models_first(self, mock_env):
         """Test create_tables registers models before creating tables."""
         from db import create_tables
         
         with patch("db.register_models") as mock_register:
             with patch("db.get_engine") as mock_get_engine:
+                mock_engine = MagicMock()
+                mock_get_engine.return_value = mock_engine
+                
                 with patch("db.Base.metadata.create_all"):
                     create_tables()
                     

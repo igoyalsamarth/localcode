@@ -209,7 +209,6 @@ def run_agent_on_pr(
     Checkpoints are keyed by ``thread_id`` = ``github:{owner}/{repo}#pr-{n}`` so the
     same PR run can be resumed or replayed from stored LangGraph state.
     """
-
     token_value = access_token or get_installation_token_for_repo(
         pr.owner,
         pr.repo_name,

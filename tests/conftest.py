@@ -58,7 +58,7 @@ def db_session(db_engine) -> Session:
 def mock_env():
     """Mock environment variables for testing."""
     with patch.dict(os.environ, {
-        "DATABASE_URL": "sqlite:///:memory:",
+        "DATABASE_URL": "postgresql://test:test@localhost:5432/test",
         "GITHUB_WEBHOOK_SECRET": "test_secret",
         "GITHUB_CLIENT_ID": "test_client_id",
         "GITHUB_CLIENT_SECRET": "test_client_secret",

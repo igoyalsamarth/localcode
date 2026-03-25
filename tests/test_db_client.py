@@ -109,44 +109,78 @@ class TestDatabaseClient:
                 with session_scope() as session:
                     raise ValueError("Test error")
 
-    def test_get_engine_returns_engine(self):
+    def test_get_engine_returns_engine(self, mock_env):
         """Test get_engine returns an engine instance."""
         from db.client import get_engine
         from sqlalchemy.engine import Engine
+        import db.client as client_module
         
-        # Use the actual database URL from environment
-        engine = get_engine()
+        # Reset cached engine
+        client_module._engine = None
         
-        assert isinstance(engine, Engine)
+        with patch("db.client.create_engine") as mock_create:
+            mock_engine = MagicMock(spec=Engine)
+            mock_create.return_value = mock_engine
+            
+            engine = get_engine()
+            
+            assert engine == mock_engine
+            mock_create.assert_called_once()
 
-    def test_get_engine_caches_instance(self):
+    def test_get_engine_caches_instance(self, mock_env):
         """Test get_engine returns same instance on multiple calls."""
         from db.client import get_engine
+        import db.client as client_module
         
-        # get_engine should return the same cached instance
-        engine1 = get_engine()
-        engine2 = get_engine()
+        # Reset cached engine
+        client_module._engine = None
         
-        assert engine1 is engine2
+        with patch("db.client.create_engine") as mock_create:
+            mock_engine = MagicMock()
+            mock_create.return_value = mock_engine
+            
+            engine1 = get_engine()
+            engine2 = get_engine()
+            
+            assert engine1 is engine2
+            # Should only create engine once
+            mock_create.assert_called_once()
 
-    def test_get_session_factory_returns_sessionmaker(self):
+    def test_get_session_factory_returns_sessionmaker(self, mock_env):
         """Test get_session_factory returns a sessionmaker."""
         from db.client import get_session_factory
         from sqlalchemy.orm import sessionmaker
+        import db.client as client_module
         
-        factory = get_session_factory()
+        # Reset cached instances
+        client_module._SessionLocal = None
+        client_module._engine = None
         
-        assert isinstance(factory, sessionmaker)
+        with patch("db.client.create_engine") as mock_create:
+            mock_engine = MagicMock()
+            mock_create.return_value = mock_engine
+            
+            factory = get_session_factory()
+            
+            assert isinstance(factory, sessionmaker)
 
-    def test_get_session_factory_caches_instance(self):
+    def test_get_session_factory_caches_instance(self, mock_env):
         """Test get_session_factory returns same instance on multiple calls."""
         from db.client import get_session_factory
+        import db.client as client_module
         
-        # get_session_factory should return the same cached instance
-        factory1 = get_session_factory()
-        factory2 = get_session_factory()
+        # Reset cached instances
+        client_module._SessionLocal = None
+        client_module._engine = None
         
-        assert factory1 is factory2
+        with patch("db.client.create_engine") as mock_create:
+            mock_engine = MagicMock()
+            mock_create.return_value = mock_engine
+            
+            factory1 = get_session_factory()
+            factory2 = get_session_factory()
+            
+            assert factory1 is factory2
 
     def test_base_has_metadata(self):
         """Test Base class has metadata attribute."""

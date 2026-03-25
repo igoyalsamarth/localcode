@@ -34,6 +34,7 @@ def ensure_greagent_review_labels_on_repository(
         if access_token is not None
         else get_api_token_for_repo(owner, repo_name)
     )
+
     for name in (REVIEW, REVIEWED, ERROR):
         ensure_repo_label_exists(owner, repo_name, tok, name)
 
