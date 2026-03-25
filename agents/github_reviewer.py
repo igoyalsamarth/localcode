@@ -254,29 +254,16 @@ Head branch: {pr.head_branch}
 Head SHA: {pr.head_sha}
 
 Please review this pull request:
-<<<<<<< HEAD
-1. Clone the repo to repos/{pr.repo_name} if it doesn't exist (use: git clone {clone_url} repos/{pr.repo_name})
-2. Checkout the PR branch: git checkout {pr.head_branch} (or git fetch origin {pr.head_branch} && git checkout {pr.head_branch})
-3. Compare the changes with the base branch: git diff {pr.base_branch}...{pr.head_branch}
-=======
 
 1. Clone the repo to repos/{pr.repo_name} if it doesn't exist (use: git clone {clone_url} repos/{pr.repo_name})
 2. Checkout the PR branch: git checkout {pr.head_branch} (or git fetch origin {pr.head_branch} && git checkout {pr.head_branch})
 3. Compare the changes with the base branch: git diff {pr.base_branch}...{pr.head_branch}
 
->>>>>>> main
 4. Review the code changes for:
    - Code quality and best practices
    - Potential bugs or issues
    - Security concerns
    - Performance implications
-<<<<<<< HEAD
-   - Test coverage
-5. If you find any issues, comment on the PR with constructive feedback using: gh pr comment {pr.pr_number} --body "your feedback"
-6. If everything looks good, approve the PR using: gh pr review {pr.pr_number} --approve --body "LGTM! The code changes look good."
-
-Remember to provide constructive and helpful feedback.
-=======
 
 5. Add inline review comments on specific lines using the `add_inline_review_comment` tool:
    - For suggestions on specific code blocks, use the tool to comment directly on those lines
@@ -303,7 +290,6 @@ Remember to provide constructive and helpful feedback.
    - If just commenting: gh pr review {pr.pr_number} --comment --body "See inline comments for feedback."
 
 Remember: Use inline comments for specific code feedback, and the summary comment for overall observations.
->>>>>>> main
 """
     thread_id = reviewer_thread_id(pr.full_name, pr.pr_number)
     usage_cb = CoderLlmUsageCallbackHandler()
