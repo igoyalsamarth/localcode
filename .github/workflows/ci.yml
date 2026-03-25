@@ -75,23 +75,11 @@ jobs:
         run: |
           pytest \
             --cov=. \
-            --cov-report=xml \
             --cov-report=term-missing \
             --cov-report=html \
             --junitxml=junit.xml \
             -v \
             --tb=short
-      
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4
-        if: always()
-        with:
-          file: ./coverage.xml
-          flags: unittests
-          name: codecov-${{ matrix.python-version }}
-          fail_ci_if_error: false
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
       
       - name: Upload test results
         uses: actions/upload-artifact@v4
