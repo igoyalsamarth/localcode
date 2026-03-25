@@ -76,20 +76,8 @@ jobs:
           pytest \
             --cov=. \
             --cov-report=term-missing \
-            --cov-report=html \
-            --junitxml=junit.xml \
             -v \
             --tb=short
-      
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results-${{ matrix.python-version }}
-          path: |
-            junit.xml
-            htmlcov/
-          retention-days: 30
       
       - name: Test Summary
         if: always()
@@ -98,28 +86,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Python Version:** ${{ matrix.python-version }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -f junit.xml ]; then
-            TEST_COUNT=$(grep -o 'tests="[0-9]*"' junit.xml | grep -o '[0-9]*' | head -1)
-            FAILURE_COUNT=$(grep -o 'failures="[0-9]*"' junit.xml | grep -o '[0-9]*' | head -1)
-            ERROR_COUNT=$(grep -o 'errors="[0-9]*"' junit.xml | grep -o '[0-9]*' | head -1)
-            
-            echo "- **Total Tests:** $TEST_COUNT" >> $GITHUB_STEP_SUMMARY
-            echo "- **Failures:** $FAILURE_COUNT" >> $GITHUB_STEP_SUMMARY
-            echo "- **Errors:** $ERROR_COUNT" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            
-            if [ "$FAILURE_COUNT" = "0" ] && [ "$ERROR_COUNT" = "0" ]; then
-              echo "✅ **All tests passed!**" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "❌ **Some tests failed!**" >> $GITHUB_STEP_SUMMARY
-            fi
-          else
-            echo "✅ **Tests completed successfully!**" >> $GITHUB_STEP_SUMMARY
-          fi
-          
+          echo "✅ **Tests completed!**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📊 Coverage report available in artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "📊 Coverage report shown in test output above" >> $GITHUB_STEP_SUMMARY
 
   test-summary:
     name: Test Summary
