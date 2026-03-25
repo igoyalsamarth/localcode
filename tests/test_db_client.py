@@ -108,3 +108,56 @@ class TestDatabaseClient:
             with pytest.raises(ValueError):
                 with session_scope() as session:
                     raise ValueError("Test error")
+
+    def test_get_engine_returns_engine(self):
+        """Test get_engine returns an engine instance."""
+        from db.client import get_engine
+        from sqlalchemy.engine import Engine
+        
+        # Use the actual database URL from environment
+        engine = get_engine()
+        
+        assert isinstance(engine, Engine)
+
+    def test_get_engine_caches_instance(self):
+        """Test get_engine returns same instance on multiple calls."""
+        from db.client import get_engine
+        
+        # get_engine should return the same cached instance
+        engine1 = get_engine()
+        engine2 = get_engine()
+        
+        assert engine1 is engine2
+
+    def test_get_session_factory_returns_sessionmaker(self):
+        """Test get_session_factory returns a sessionmaker."""
+        from db.client import get_session_factory
+        from sqlalchemy.orm import sessionmaker
+        
+        factory = get_session_factory()
+        
+        assert isinstance(factory, sessionmaker)
+
+    def test_get_session_factory_caches_instance(self):
+        """Test get_session_factory returns same instance on multiple calls."""
+        from db.client import get_session_factory
+        
+        # get_session_factory should return the same cached instance
+        factory1 = get_session_factory()
+        factory2 = get_session_factory()
+        
+        assert factory1 is factory2
+
+    def test_base_has_metadata(self):
+        """Test Base class has metadata attribute."""
+        from db.client import Base
+        
+        assert hasattr(Base, "metadata")
+        assert Base.metadata is not None
+
+    def test_base_has_registry(self):
+        """Test Base class has registry attribute."""
+        from db.client import Base
+        
+        assert hasattr(Base, "registry")
+        assert Base.registry is not None

@@ -153,3 +153,89 @@ class TestConstants:
         """Test Ollama base URL constant."""
         assert isinstance(OLLAMA_BASE_URL, str)
         assert OLLAMA_BASE_URL.startswith("http")
+
+    def test_github_rest_api_version(self):
+        """Test GitHub REST API version constant."""
+        from constants import GITHUB_REST_API_VERSION
+        
+        assert isinstance(GITHUB_REST_API_VERSION, str)
+        assert len(GITHUB_REST_API_VERSION) > 0
+
+    def test_github_client_id_constant(self):
+        """Test GitHub client ID constant exists."""
+        from constants import GITHUB_CLIENT_ID
+        
+        assert isinstance(GITHUB_CLIENT_ID, str)
+
+    def test_github_redirect_uri_constant(self):
+        """Test GitHub redirect URI constant exists."""
+        from constants import GITHUB_REDIRECT_URI
+        
+        assert isinstance(GITHUB_REDIRECT_URI, str)
+        assert "callback" in GITHUB_REDIRECT_URI.lower()
+
+    def test_client_url_constant(self):
+        """Test client URL constant exists."""
+        from constants import CLIENT_URL
+        
+        assert isinstance(CLIENT_URL, str)
+        assert CLIENT_URL.startswith("http")
+
+    def test_github_webhook_secret_constant(self):
+        """Test GitHub webhook secret constant exists."""
+        from constants import GITHUB_WEBHOOK_SECRET
+        
+        assert isinstance(GITHUB_WEBHOOK_SECRET, str)
+
+    def test_daytona_install_gh_cli_constant(self):
+        """Test Daytona install GH CLI constant."""
+        from constants import DAYTONA_INSTALL_GH_CLI
+        
+        assert isinstance(DAYTONA_INSTALL_GH_CLI, str)
+
+    def test_github_cli_version_constant(self):
+        """Test GitHub CLI version constant."""
+        from constants import GITHUB_CLI_VERSION
+        
+        assert isinstance(GITHUB_CLI_VERSION, str)
+        assert len(GITHUB_CLI_VERSION) > 0
+
+    def test_git_author_name_constant(self):
+        """Test GIT_AUTHOR_NAME constant exists."""
+        from constants import GIT_AUTHOR_NAME
+        
+        assert isinstance(GIT_AUTHOR_NAME, str)
+
+    def test_git_author_email_constant(self):
+        """Test GIT_AUTHOR_EMAIL constant exists."""
+        from constants import GIT_AUTHOR_EMAIL
+        
+        assert isinstance(GIT_AUTHOR_EMAIL, str)
+
+    def test_git_committer_name_constant(self):
+        """Test GIT_COMMITTER_NAME constant exists."""
+        from constants import GIT_COMMITTER_NAME
+        
+        assert isinstance(GIT_COMMITTER_NAME, str)
+
+    def test_git_committer_email_constant(self):
+        """Test GIT_COMMITTER_EMAIL constant exists."""
+        from constants import GIT_COMMITTER_EMAIL
+        
+        assert isinstance(GIT_COMMITTER_EMAIL, str)
+
+    def test_github_app_constants_exist(self):
+        """Test GitHub App constants exist."""
+        from constants import (
+            GITHUB_APP_CLIENT_ID,
+            GITHUB_APP_CLIENT_SECRET,
+            GITHUB_APP_ID,
+            GITHUB_APP_SLUG,
+            GITHUB_APP_PRIVATE_KEY,
+        )
+        
+        assert isinstance(GITHUB_APP_CLIENT_ID, str)
+        assert isinstance(GITHUB_APP_CLIENT_SECRET, str)
+        assert isinstance(GITHUB_APP_ID, str)
+        assert isinstance(GITHUB_APP_SLUG, str)
+        assert isinstance(GITHUB_APP_PRIVATE_KEY, str)
