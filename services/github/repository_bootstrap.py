@@ -16,6 +16,7 @@ from model.enums import AgentType
 from model.tables import Agent, Model, Repository, RepositoryAgent
 
 CODER_MODE_AUTO = "auto"
+REVIEW_MODE_TAG = "tag"
 
 
 def get_or_create_default_model(session: Session) -> Model:
@@ -38,6 +39,23 @@ def get_or_create_coder_agent(session: Session, organization_id: UUID) -> Agent:
             organization_id=organization_id,
             name="Code Agent",
             type=AgentType.code,
+        )
+        session.add(agent)
+        session.flush()
+    return agent
+
+
+def get_or_create_review_agent(session: Session, organization_id: UUID) -> Agent:
+    stmt = select(Agent).where(
+        Agent.organization_id == organization_id,
+        Agent.type == AgentType.review,
+    )
+    agent = session.execute(stmt).scalar_one_or_none()
+    if not agent:
+        agent = Agent(
+            organization_id=organization_id,
+            name="Review Agent",
+            type=AgentType.review,
         )
         session.add(agent)
         session.flush()
@@ -117,5 +135,30 @@ def ensure_default_coder_repository_agent(session: Session, repository: Reposito
             model_id=model.id,
             enabled=True,
             config_json={"mode": CODER_MODE_AUTO},
+        )
+    )
+
+
+def ensure_default_review_repository_agent(session: Session, repository: Repository) -> None:
+    """
+    If there is no ``RepositoryAgent`` row for the org's review agent, create one:
+    ``enabled=True``, ``config_json`` ``{\"mode\": \"tag\"}`` (default is tag-based, unlike coder).
+    """
+    agent = get_or_create_review_agent(session, repository.organization_id)
+    stmt = select(RepositoryAgent).where(
+        RepositoryAgent.repository_id == repository.id,
+        RepositoryAgent.agent_id == agent.id,
+    )
+    if session.execute(stmt).scalar_one_or_none():
+        return
+
+    model = get_or_create_default_model(session)
+    session.add(
+        RepositoryAgent(
+            repository_id=repository.id,
+            agent_id=agent.id,
+            model_id=model.id,
+            enabled=True,
+            config_json={"mode": REVIEW_MODE_TAG},
         )
     )

@@ -1,4 +1,4 @@
-"""Dramatiq tasks for processing GitHub issues."""
+"""Dramatiq tasks for processing GitHub issues and PRs."""
 
 import dramatiq
 from task_queue.broker import broker
@@ -85,5 +85,47 @@ def process_github_issue(issue_data: dict) -> None:
             )
         except Exception as cleanup_err:
             logger.exception("Failed to handle error cleanup: %s", cleanup_err)
+        
+        raise
+
+
+@dramatiq.actor(queue_name="github_reviewer", max_retries=3, time_limit=3600000)
+def process_github_pr_review(pr_data: dict) -> None:
+    """
+    Process a GitHub PR with the review agent.
+    
+    This task is enqueued by the event publisher service and consumed by worker instances.
+    
+    Args:
+        pr_data: Dictionary containing PR information (owner, repo, pr_number, etc.)
+    """
+    from services.github.pr_payload import PROpenedForReview
+    from services.github.review_workflow import run_review_agent_for_opened_pr
+    
+    logger.info(
+        "Worker processing PR review: %s/%s#%s",
+        pr_data.get("owner"),
+        pr_data.get("repo_name"),
+        pr_data.get("pr_number"),
+    )
+    
+    try:
+        work = PROpenedForReview(**pr_data)
+        run_review_agent_for_opened_pr(work)
+        
+        logger.info(
+            "Successfully processed PR review #%s in %s",
+            work.pr_number,
+            work.full_name,
+        )
+            
+    except Exception as e:
+        logger.exception(
+            "Worker failed to process PR review #%s in %s/%s: %s",
+            pr_data.get("pr_number"),
+            pr_data.get("owner"),
+            pr_data.get("repo_name"),
+            e,
+        )
         
         raise

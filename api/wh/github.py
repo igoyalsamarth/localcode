@@ -14,14 +14,21 @@ from services.github.coder_workflow import (
     ensure_greagent_labels_on_repository,
     prepare_issue_for_coder_work,
 )
+from services.github.review_trigger import resolve_review_pr_work
+from services.github.review_workflow import (
+    ensure_greagent_review_labels_on_repository,
+    prepare_pr_for_review_work,
+)
 from services.github.issue_payload import IssueOpenedForCoder
+from services.github.pr_payload import PROpenedForReview
 from services.github.installation_token import get_api_token_for_installation
 from services.github.repository_bootstrap import (
     ensure_default_coder_repository_agent,
+    ensure_default_review_repository_agent,
     upsert_repository_from_github,
 )
 from services.github.webhook_signature import verify_github_webhook_signature
-from task_queue.tasks import process_github_issue
+from task_queue.tasks import process_github_issue, process_github_pr_review
 
 logger = get_logger(__name__)
 
@@ -106,8 +113,12 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
                             session.add(new_repo)
                             session.flush()
                             ensure_default_coder_repository_agent(session, new_repo)
+                            ensure_default_review_repository_agent(session, new_repo)
                         else:
                             ensure_default_coder_repository_agent(
+                                session, existing_repo
+                            )
+                            ensure_default_review_repository_agent(
                                 session, existing_repo
                             )
 
@@ -135,6 +146,9 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
                             owner, name = full_name.split("/", 1)
                             try:
                                 ensure_greagent_labels_on_repository(
+                                    owner, name, access_token=install_tok
+                                )
+                                ensure_greagent_review_labels_on_repository(
                                     owner, name, access_token=install_tok
                                 )
                             except Exception:
@@ -230,6 +244,7 @@ def _handle_installation_repositories(data: dict[str, Any]) -> dict[str, Any]:
                             account_login_fallback=account_login,
                         )
                         ensure_default_coder_repository_agent(session, row)
+                        ensure_default_review_repository_agent(session, row)
                     except Exception:
                         logger.exception(
                             "Failed to upsert repository from installation_repositories: %s",
@@ -258,6 +273,9 @@ def _handle_installation_repositories(data: dict[str, Any]) -> dict[str, Any]:
                     ensure_greagent_labels_on_repository(
                         owner, name, access_token=install_tok
                     )
+                    ensure_greagent_review_labels_on_repository(
+                        owner, name, access_token=install_tok
+                    )
                 except Exception:
                     logger.exception(
                         "Failed to ensure greagent labels for %s", full_name
@@ -273,6 +291,11 @@ def _handle_installation_repositories(data: dict[str, Any]) -> dict[str, Any]:
 def _parse_coder_trigger(data: dict[str, Any]) -> IssueOpenedForCoder | None:
     with session_scope() as session:
         return resolve_coder_issue_work(session, data)
+
+
+def _parse_review_trigger(data: dict[str, Any]) -> PROpenedForReview | None:
+    with session_scope() as session:
+        return resolve_review_pr_work(session, data)
 
 
 async def _handle_issues_event(
@@ -336,6 +359,70 @@ async def _handle_issues_event(
     }
 
 
+async def _handle_pull_request_event(
+    data: dict[str, Any],
+    x_github_delivery: str | None,
+) -> dict[str, Any]:
+    work = _parse_review_trigger(data)
+
+    if work is None:
+        action = data.get("action")
+        logger.info("Ignoring pull_request event (not a review trigger): action=%s", action)
+        return {"status": "ignored", "action": action}
+
+    logger.info(
+        "Review webhook delivery=%s action=%s pr=%s#%s",
+        x_github_delivery,
+        data.get("action"),
+        work.full_name,
+        work.pr_number,
+    )
+
+    try:
+        prepare_pr_for_review_work(work)
+    except Exception:
+        logger.exception(
+            "prepare_pr_for_review_work failed for %s#%s (delivery=%s)",
+            work.full_name,
+            work.pr_number,
+            x_github_delivery,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to prepare PR (labels). Check token permissions.",
+        ) from None
+
+    logger.info(
+        "Enqueuing review task for PR #%s %s in %s",
+        work.pr_number,
+        work.pr_title,
+        work.full_name,
+    )
+
+    pr_data = {
+        "owner": work.owner,
+        "repo_name": work.repo_name,
+        "repo_url": work.repo_url,
+        "full_name": work.full_name,
+        "pr_number": work.pr_number,
+        "pr_title": work.pr_title,
+        "pr_body": work.pr_body,
+        "base_branch": work.base_branch,
+        "head_branch": work.head_branch,
+        "head_sha": work.head_sha,
+        "github_installation_id": work.github_installation_id,
+    }
+
+    process_github_pr_review.send(pr_data)
+
+    return {
+        "status": "enqueued",
+        "pr_number": work.pr_number,
+        "pr_title": work.pr_title,
+        "repository": work.full_name,
+    }
+
+
 @router.post("/github")
 async def github_webhook(
     request: Request,
@@ -348,6 +435,7 @@ async def github_webhook(
 
     - ``installation`` / ``installation_repositories``: persist installation and repos.
     - ``issues``: enqueue coder agent task to RabbitMQ via Dramatiq (processed by workers).
+    - ``pull_request``: enqueue review agent task to RabbitMQ via Dramatiq (processed by workers).
     """
     payload = await request.body()
 
@@ -364,6 +452,9 @@ async def github_webhook(
 
     if x_github_event == "issues":
         return await _handle_issues_event(data, x_github_delivery)
+
+    if x_github_event == "pull_request":
+        return await _handle_pull_request_event(data, x_github_delivery)
 
     logger.info("Ignoring GitHub event: %s", x_github_event)
     return {"status": "ignored", "event": x_github_event}
