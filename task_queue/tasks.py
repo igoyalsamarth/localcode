@@ -26,7 +26,7 @@ def process_github_issue(issue_data: dict) -> None:
         _transition_in_progress_to_error,
     )
     from services.github.client import comment_on_issue
-    from services.github.installation_token import get_api_token_for_coder_issue
+    from services.github.installation_token import get_installation_token_for_repo
     
     logger.info(
         "Worker processing issue: %s/%s#%s",
@@ -37,7 +37,7 @@ def process_github_issue(issue_data: dict) -> None:
     
     try:
         work = IssueOpenedForCoder(**issue_data)
-        tok = get_api_token_for_coder_issue(
+        tok = get_installation_token_for_repo(
             work.owner,
             work.repo_name,
             github_installation_id=work.github_installation_id,
@@ -67,7 +67,7 @@ def process_github_issue(issue_data: dict) -> None:
         
         try:
             work = IssueOpenedForCoder(**issue_data)
-            tok = get_api_token_for_coder_issue(
+            tok = get_installation_token_for_repo(
                 work.owner,
                 work.repo_name,
                 github_installation_id=work.github_installation_id,

@@ -14,8 +14,8 @@ from services.github.client import (
 )
 from services.github.coder_labels import ERROR, REVIEW, REVIEWED
 from services.github.installation_token import (
-    get_api_token_for_coder_issue,
     get_api_token_for_repo,
+    get_installation_token_for_repo,
 )
 from services.github.pr_payload import PROpenedForReview
 
@@ -82,7 +82,7 @@ def prepare_pr_for_review_work(work: PROpenedForReview) -> None:
 
     Call this synchronously in the webhook before enqueueing the background agent run.
     """
-    tok = get_api_token_for_coder_issue(
+    tok = get_installation_token_for_repo(
         work.owner,
         work.repo_name,
         github_installation_id=work.github_installation_id,
@@ -96,7 +96,7 @@ def run_review_agent_for_opened_pr(work: PROpenedForReview) -> None:
 
     On success: ``greagent:reviewed``. On failure: ``greagent:error`` + error comment.
     """
-    tok = get_api_token_for_coder_issue(
+    tok = get_installation_token_for_repo(
         work.owner,
         work.repo_name,
         github_installation_id=work.github_installation_id,

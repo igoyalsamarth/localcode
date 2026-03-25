@@ -195,3 +195,90 @@ def approve_pr(owner: str, repo: str, pr_number: int, token: str, body: str = ""
     r = requests.post(url, headers=headers, json=payload)
     r.raise_for_status()
     return r.json()
+
+
+def create_pr_review_comment(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    token: str,
+    body: str,
+    commit_id: str,
+    path: str,
+    line: int,
+    side: str = "RIGHT",
+    start_line: int | None = None,
+    start_side: str | None = None,
+):
+    """
+    Create an inline review comment on a specific line or range of lines in a PR.
+
+    Parameters
+    ----------
+    owner : str
+        Repository owner
+    repo : str
+        Repository name
+    pr_number : int
+        Pull request number
+    token : str
+        GitHub access token
+    body : str
+        The comment text
+    commit_id : str
+        SHA of the commit being commented on (use HEAD SHA of the PR)
+    path : str
+        Relative path to the file in the repository
+    line : int
+        The line number where the comment applies (for multi-line, this is the last line)
+    side : str
+        Which side of the diff: "LEFT" (deletions/old) or "RIGHT" (additions/new). Default: "RIGHT"
+    start_line : int, optional
+        Starting line for multi-line comments
+    start_side : str, optional
+        Starting side for multi-line comments ("LEFT" or "RIGHT")
+
+    Returns
+    -------
+    dict
+        GitHub API response with the created comment
+
+    Examples
+    --------
+    Single-line comment:
+        create_pr_review_comment(
+            "owner", "repo", 123, token, "Fix this typo",
+            "abc123", "src/file.ts", 45
+        )
+
+    Multi-line comment:
+        create_pr_review_comment(
+            "owner", "repo", 123, token, "Refactor this block",
+            "abc123", "src/file.ts", 50,
+            start_line=45, start_side="RIGHT"
+        )
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/comments"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
+    }
+
+    payload = {
+        "body": body,
+        "commit_id": commit_id,
+        "path": path,
+        "line": line,
+        "side": side,
+    }
+
+    if start_line is not None:
+        payload["start_line"] = start_line
+    if start_side is not None:
+        payload["start_side"] = start_side
+
+    r = requests.post(url, headers=headers, json=payload)
+    r.raise_for_status()
+    return r.json()

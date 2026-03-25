@@ -13,6 +13,7 @@ otherwise the local ``LocalShellBackend`` virtual filesystem under ``./workspace
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from deepagents import create_deep_agent
@@ -20,6 +21,7 @@ from deepagents.backends import LocalShellBackend
 from langchain_ollama import ChatOllama
 
 from agents.checkpoint import get_checkpointer
+from agents.reviewer_tools import add_inline_review_comment
 from agents.usage_callback import CoderLlmUsageCallbackHandler
 from constants import (
     CODER_LLM_PROVIDER,
@@ -37,7 +39,7 @@ from services.github.coder_daytona import (
     stop_sandbox,
 )
 from services.github.installation_token import (
-    get_api_token_for_coder_issue,
+    get_installation_token_for_repo,
     github_bot_git_identity,
     installation_token_env,
 )
@@ -138,6 +140,7 @@ def create_github_reviewer_agent(backend: object, *, system_prompt: str) -> obje
         system_prompt=system_prompt,
         backend=backend,
         checkpointer=get_checkpointer(),
+        tools=[add_inline_review_comment],
     )
 
 
@@ -206,7 +209,7 @@ def run_agent_on_pr(
     Checkpoints are keyed by ``thread_id`` = ``github:{owner}/{repo}#pr-{n}`` so the
     same PR run can be resumed or replayed from stored LangGraph state.
     """
-    token_value = access_token or get_api_token_for_coder_issue(
+    token_value = access_token or get_installation_token_for_repo(
         pr.owner,
         pr.repo_name,
         github_installation_id=pr.github_installation_id,
@@ -250,19 +253,42 @@ Head branch: {pr.head_branch}
 Head SHA: {pr.head_sha}
 
 Please review this pull request:
+
 1. Clone the repo to repos/{pr.repo_name} if it doesn't exist (use: git clone {clone_url} repos/{pr.repo_name})
 2. Checkout the PR branch: git checkout {pr.head_branch} (or git fetch origin {pr.head_branch} && git checkout {pr.head_branch})
 3. Compare the changes with the base branch: git diff {pr.base_branch}...{pr.head_branch}
+
 4. Review the code changes for:
    - Code quality and best practices
    - Potential bugs or issues
    - Security concerns
    - Performance implications
-   - Test coverage
-5. If you find any issues, comment on the PR with constructive feedback using: gh pr comment {pr.pr_number} --body "your feedback"
-6. If everything looks good, approve the PR using: gh pr review {pr.pr_number} --approve --body "LGTM! The code changes look good."
 
-Remember to provide constructive and helpful feedback.
+5. Add inline review comments on specific lines using the `add_inline_review_comment` tool:
+   - For suggestions on specific code blocks, use the tool to comment directly on those lines
+   - For multi-line suggestions, specify both start_line and line parameters
+   - Use clear, constructive language in your comments
+   - Examples:
+     * Single line: add_inline_review_comment(path="src/utils.ts", line=42, body="Consider using const instead of let")
+     * Multi-line: add_inline_review_comment(path="src/api.ts", line=50, start_line=45, body="This block could be refactored")
+
+6. After adding inline comments, post a summary comment using:
+   gh pr comment {pr.pr_number} --body "## Review Summary
+
+   I've reviewed the changes and added inline comments on specific lines.
+
+   **Key Points:**
+   - [List main observations]
+
+   **Overall Assessment:**
+   [Your verdict]"
+
+7. Finally, submit your review:
+   - If everything looks good: gh pr review {pr.pr_number} --approve --body "LGTM! See inline comments for minor suggestions."
+   - If changes needed: gh pr review {pr.pr_number} --request-changes --body "Please address the inline comments."
+   - If just commenting: gh pr review {pr.pr_number} --comment --body "See inline comments for feedback."
+
+Remember: Use inline comments for specific code feedback, and the summary comment for overall observations.
 """
     thread_id = reviewer_thread_id(pr.full_name, pr.pr_number)
     usage_cb = CoderLlmUsageCallbackHandler()
@@ -271,6 +297,12 @@ Remember to provide constructive and helpful feedback.
         "configurable": {"thread_id": thread_id},
         "callbacks": [usage_cb],
     }
+
+    # Set environment variables for the review tools
+    os.environ["REVIEW_OWNER"] = pr.owner
+    os.environ["REVIEW_REPO"] = pr.repo_name
+    os.environ["REVIEW_PR_NUMBER"] = str(pr.pr_number)
+    os.environ["REVIEW_HEAD_SHA"] = pr.head_sha
 
     daytona_session = None
     try:
@@ -285,6 +317,15 @@ Remember to provide constructive and helpful feedback.
                 git_committer=git_committer_pair,
                 repo_name=pr.repo_name,
                 coder_home=coder_home,
+            )
+            # Add review context to Daytona env vars
+            env_vars.update(
+                {
+                    "REVIEW_OWNER": pr.owner,
+                    "REVIEW_REPO": pr.repo_name,
+                    "REVIEW_PR_NUMBER": str(pr.pr_number),
+                    "REVIEW_HEAD_SHA": pr.head_sha,
+                }
             )
             backend, session = create_daytona_coder_session(
                 thread_id, env_vars, coder_home=coder_home
