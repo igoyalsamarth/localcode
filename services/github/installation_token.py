@@ -203,16 +203,16 @@ def get_api_token_for_repo(owner: str, repo_name: str) -> str:
     return get_installation_access_token(iid)
 
 
-def get_api_token_for_coder_issue(
+def get_installation_token_for_repo(
     owner: str,
     repo_name: str,
     *,
     github_installation_id: int | None = None,
 ) -> str:
     """
-    Mint an installation token for coder flows.
+    Mint an installation token for agent workflows (coder, reviewer, etc.).
 
-    Prefer ``github_installation_id`` from the ``issues`` webhook (``installation.id``).
+    Prefer ``github_installation_id`` from the webhook payload (``installation.id``).
     That value is authoritative; the DB can be stale after reinstall or migration.
     """
     if not app_credentials_configured():
