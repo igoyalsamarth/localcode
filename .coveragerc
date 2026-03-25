@@ -1,0 +1,31 @@
+[run]
+source = .
+omit = 
+    */tests/*
+    */test_*
+    */__pycache__/*
+    */site-packages/*
+    .venv/*
+    */agents/github_coder.py
+    */agents/github_reviewer.py
+    */agents/checkpoint.py
+    */agents/usage_callback.py
+    */services/github/coder_workflow.py
+    */services/github/review_workflow.py
+    */services/github/coder_daytona.py
+    */task_queue/tasks.py
+    */services_entrypoints/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @abc.abstractmethod
+
+[html]
+directory = htmlcov
