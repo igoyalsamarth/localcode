@@ -29,9 +29,12 @@ def ensure_greagent_review_labels_on_repository(
     access_token: str | None = None,
 ) -> None:
     """Create the ``greagent:review``, ``greagent:reviewed``, and ``greagent:error`` labels on the repo if they are missing."""
-    tok = access_token if access_token is not None else get_api_token_for_repo(
-        owner, repo_name
+    tok = (
+        access_token
+        if access_token is not None
+        else get_api_token_for_repo(owner, repo_name)
     )
+
     for name in (REVIEW, REVIEWED, ERROR):
         ensure_repo_label_exists(owner, repo_name, tok, name)
 
@@ -44,13 +47,9 @@ def _ensure_greagent_review_labels_exist(
         ensure_repo_label_exists(work.owner, work.repo_name, access_token, name)
 
 
-def _transition_review_to_reviewed(
-    work: PROpenedForReview, access_token: str
-) -> None:
+def _transition_review_to_reviewed(work: PROpenedForReview, access_token: str) -> None:
     """Replace ``greagent:review`` with ``greagent:reviewed``."""
-    remove_pr_label(
-        work.owner, work.repo_name, work.pr_number, REVIEW, access_token
-    )
+    remove_pr_label(work.owner, work.repo_name, work.pr_number, REVIEW, access_token)
     add_pr_labels(
         work.owner,
         work.repo_name,
@@ -60,13 +59,9 @@ def _transition_review_to_reviewed(
     )
 
 
-def _transition_review_to_error(
-    work: PROpenedForReview, access_token: str
-) -> None:
+def _transition_review_to_error(work: PROpenedForReview, access_token: str) -> None:
     """Replace ``greagent:review`` with ``greagent:error``."""
-    remove_pr_label(
-        work.owner, work.repo_name, work.pr_number, REVIEW, access_token
-    )
+    remove_pr_label(work.owner, work.repo_name, work.pr_number, REVIEW, access_token)
     add_pr_labels(
         work.owner,
         work.repo_name,

@@ -12,3 +12,11 @@ wheels/
 /workspace
 .env
 *.pem
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
