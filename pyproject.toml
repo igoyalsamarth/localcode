@@ -31,6 +31,7 @@ worker = "services_entrypoints.worker:main"
 
 [tool.setuptools]
 packages = ["agents", "api", "db", "model", "task_queue", "services", "services_entrypoints"]
+py-modules = ["logger", "constants", "app", "main"]
 
 [build-system]
 requires = ["setuptools>=61.0"]

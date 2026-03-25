@@ -23,6 +23,7 @@ from agents.checkpoint import coder_thread_id, get_checkpointer
 from agents.usage_callback import CoderLlmUsageCallbackHandler
 from constants import (
     CODER_LLM_PROVIDER,
+    OLLAMA_BASE_URL,
     daytona_coder_enabled,
     daytona_coder_home,
     get_coder_model_name,
@@ -122,6 +123,7 @@ def build_coder_system_prompt(
 
 llm = ChatOllama(
     model=get_coder_model_name(),
+    base_url=OLLAMA_BASE_URL,
     max_retries=10,
     timeout=120,
 )

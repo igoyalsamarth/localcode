@@ -6,6 +6,7 @@ load_dotenv()
 
 # Coder agent (ChatOllama): provider string stored on usage rows for billing
 CODER_LLM_PROVIDER = os.environ.get("CODER_LLM_PROVIDER", "ollama")
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
 
 def get_coder_model_name() -> str:
