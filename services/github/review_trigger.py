@@ -67,10 +67,7 @@ def resolve_review_pr_work(
 
     if action == "labeled":
         label_name = (data.get("label") or {}).get("name")
-        if (
-            not isinstance(label_name, str)
-            or label_name.strip() != REVIEW_LABEL_QUEUE
-        ):
+        if not isinstance(label_name, str) or label_name.strip() != REVIEW_LABEL_QUEUE:
             return None
         return PROpenedForReview.from_github_pr_event(data)
 

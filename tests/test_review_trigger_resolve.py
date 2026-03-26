@@ -51,7 +51,9 @@ class TestResolveReviewPrWork:
         model = Model(provider="openai", name="gpt-4")
         db_session.add(model)
         db_session.flush()
-        agent = Agent(organization_id=org.id, name="Review Agent", type=AgentType.review)
+        agent = Agent(
+            organization_id=org.id, name="Review Agent", type=AgentType.review
+        )
         db_session.add(agent)
         db_session.flush()
         ra = RepositoryAgent(

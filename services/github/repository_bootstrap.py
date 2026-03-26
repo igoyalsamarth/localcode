@@ -143,7 +143,9 @@ def _ensure_repository_agent_link(
     )
 
 
-def ensure_default_coder_repository_agent(session: Session, repository: Repository) -> None:
+def ensure_default_coder_repository_agent(
+    session: Session, repository: Repository
+) -> None:
     """
     If there is no ``RepositoryAgent`` row for the org's code agent, create one:
     ``enabled=True``, ``config_json`` ``{\"mode\": \"auto\"}`` (``TRIGGER_MODE_AUTO``).
@@ -156,7 +158,9 @@ def ensure_default_coder_repository_agent(session: Session, repository: Reposito
     )
 
 
-def ensure_default_review_repository_agent(session: Session, repository: Repository) -> None:
+def ensure_default_review_repository_agent(
+    session: Session, repository: Repository
+) -> None:
     """
     If there is no ``RepositoryAgent`` row for the org's review agent, create one:
     ``enabled=True``, ``config_json`` ``{\"mode\": \"auto\"}`` (``TRIGGER_MODE_AUTO``),

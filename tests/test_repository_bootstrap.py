@@ -1,7 +1,6 @@
 """Tests for repository bootstrap utilities."""
 
 import pytest
-from uuid import uuid4
 
 from services.github.repository_bootstrap import (
     get_or_create_default_model,
@@ -30,7 +29,7 @@ class TestRepositoryBootstrap:
     def test_get_or_create_default_model_creates_new(self, db_session):
         """Test creating a new default model."""
         model = get_or_create_default_model(db_session)
-        
+
         assert model is not None
         assert model.provider == "openai"
         assert model.name == "gpt-4"
@@ -40,9 +39,9 @@ class TestRepositoryBootstrap:
         model1 = Model(provider="custom", name="custom-model")
         db_session.add(model1)
         db_session.commit()
-        
+
         model2 = get_or_create_default_model(db_session)
-        
+
         assert model2.id == model1.id
         assert model2.provider == "custom"
 
@@ -51,13 +50,13 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         agent = get_or_create_coder_agent(db_session, org.id)
-        
+
         assert agent is not None
         assert agent.organization_id == org.id
         assert agent.type == AgentType.code
@@ -68,11 +67,11 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         agent1 = Agent(
             organization_id=org.id,
             name="Existing Code Agent",
@@ -80,9 +79,9 @@ class TestRepositoryBootstrap:
         )
         db_session.add(agent1)
         db_session.commit()
-        
+
         agent2 = get_or_create_coder_agent(db_session, org.id)
-        
+
         assert agent2.id == agent1.id
         assert agent2.name == "Existing Code Agent"
 
@@ -91,13 +90,13 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         agent = get_or_create_review_agent(db_session, org.id)
-        
+
         assert agent is not None
         assert agent.organization_id == org.id
         assert agent.type == AgentType.review
@@ -108,11 +107,11 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         agent1 = Agent(
             organization_id=org.id,
             name="Existing Review Agent",
@@ -120,9 +119,9 @@ class TestRepositoryBootstrap:
         )
         db_session.add(agent1)
         db_session.commit()
-        
+
         agent2 = get_or_create_review_agent(db_session, org.id)
-        
+
         assert agent2.id == agent1.id
         assert agent2.name == "Existing Review Agent"
 
@@ -131,11 +130,11 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         github_repo = {
             "id": 12345,
             "name": "test-repo",
@@ -143,9 +142,9 @@ class TestRepositoryBootstrap:
             "private": True,
             "default_branch": "main",
         }
-        
+
         repo = upsert_repository_from_github(db_session, org.id, github_repo)
-        
+
         assert repo is not None
         assert repo.github_repo_id == 12345
         assert repo.name == "test-repo"
@@ -159,11 +158,11 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         repo1 = Repository(
             organization_id=org.id,
             github_repo_id=12345,
@@ -174,7 +173,7 @@ class TestRepositoryBootstrap:
         )
         db_session.add(repo1)
         db_session.commit()
-        
+
         github_repo = {
             "id": 12345,
             "name": "new-name",
@@ -182,9 +181,9 @@ class TestRepositoryBootstrap:
             "private": True,
             "default_branch": "main",
         }
-        
+
         repo2 = upsert_repository_from_github(db_session, org.id, github_repo)
-        
+
         assert repo2.id == repo1.id
         assert repo2.name == "new-name"
         assert repo2.owner == "new-owner"
@@ -196,13 +195,13 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         github_repo = {"name": "test-repo"}
-        
+
         with pytest.raises(ValueError, match="missing id"):
             upsert_repository_from_github(db_session, org.id, github_repo)
 
@@ -211,13 +210,13 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         github_repo = {"id": 12345}
-        
+
         with pytest.raises(ValueError, match="missing name"):
             upsert_repository_from_github(db_session, org.id, github_repo)
 
@@ -226,24 +225,24 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         github_repo = {
             "id": 12345,
             "name": "test-repo",
             "private": False,
         }
-        
+
         repo = upsert_repository_from_github(
             db_session,
             org.id,
             github_repo,
             account_login_fallback="fallback-owner",
         )
-        
+
         assert repo.owner == "fallback-owner"
 
     def test_ensure_default_coder_repository_agent_creates_new(self, db_session):
@@ -251,11 +250,11 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         repo = Repository(
             organization_id=org.id,
             github_repo_id=12345,
@@ -265,14 +264,14 @@ class TestRepositoryBootstrap:
         )
         db_session.add(repo)
         db_session.flush()
-        
+
         ensure_default_coder_repository_agent(db_session, repo)
         db_session.commit()
-        
-        repo_agent = db_session.query(RepositoryAgent).filter_by(
-            repository_id=repo.id
-        ).first()
-        
+
+        repo_agent = (
+            db_session.query(RepositoryAgent).filter_by(repository_id=repo.id).first()
+        )
+
         assert repo_agent is not None
         assert repo_agent.enabled is True
         assert repo_agent.config_json == {"mode": TRIGGER_MODE_AUTO}
@@ -283,11 +282,11 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         agent = Agent(
             organization_id=org.id,
             name="Code Agent",
@@ -295,11 +294,11 @@ class TestRepositoryBootstrap:
         )
         db_session.add(agent)
         db_session.flush()
-        
+
         model = Model(provider="openai", name="gpt-4")
         db_session.add(model)
         db_session.flush()
-        
+
         repo = Repository(
             organization_id=org.id,
             github_repo_id=12345,
@@ -309,7 +308,7 @@ class TestRepositoryBootstrap:
         )
         db_session.add(repo)
         db_session.flush()
-        
+
         repo_agent1 = RepositoryAgent(
             repository_id=repo.id,
             agent_id=agent.id,
@@ -319,19 +318,19 @@ class TestRepositoryBootstrap:
         )
         db_session.add(repo_agent1)
         db_session.commit()
-        
+
         ensure_default_coder_repository_agent(db_session, repo)
         db_session.commit()
-        
-        count = db_session.query(RepositoryAgent).filter_by(
-            repository_id=repo.id
-        ).count()
-        
+
+        count = (
+            db_session.query(RepositoryAgent).filter_by(repository_id=repo.id).count()
+        )
+
         assert count == 1
-        
-        repo_agent2 = db_session.query(RepositoryAgent).filter_by(
-            repository_id=repo.id
-        ).first()
+
+        repo_agent2 = (
+            db_session.query(RepositoryAgent).filter_by(repository_id=repo.id).first()
+        )
         assert repo_agent2.enabled is False
         assert repo_agent2.config_json == {"mode": "manual"}
 
@@ -340,11 +339,11 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         repo = Repository(
             organization_id=org.id,
             github_repo_id=12345,
@@ -354,14 +353,14 @@ class TestRepositoryBootstrap:
         )
         db_session.add(repo)
         db_session.flush()
-        
+
         ensure_default_review_repository_agent(db_session, repo)
         db_session.commit()
-        
-        repo_agent = db_session.query(RepositoryAgent).filter_by(
-            repository_id=repo.id
-        ).first()
-        
+
+        repo_agent = (
+            db_session.query(RepositoryAgent).filter_by(repository_id=repo.id).first()
+        )
+
         assert repo_agent is not None
         assert repo_agent.enabled is True
         assert repo_agent.config_json == {"mode": TRIGGER_MODE_AUTO}
@@ -372,11 +371,11 @@ class TestRepositoryBootstrap:
         user = User(email="test@example.com", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        
+
         org = Organization(name="Test Org", owner_user_id=user.id)
         db_session.add(org)
         db_session.flush()
-        
+
         agent = Agent(
             organization_id=org.id,
             name="Review Agent",
@@ -384,11 +383,11 @@ class TestRepositoryBootstrap:
         )
         db_session.add(agent)
         db_session.flush()
-        
+
         model = Model(provider="openai", name="gpt-4")
         db_session.add(model)
         db_session.flush()
-        
+
         repo = Repository(
             organization_id=org.id,
             github_repo_id=12345,
@@ -398,7 +397,7 @@ class TestRepositoryBootstrap:
         )
         db_session.add(repo)
         db_session.flush()
-        
+
         repo_agent1 = RepositoryAgent(
             repository_id=repo.id,
             agent_id=agent.id,
@@ -408,19 +407,19 @@ class TestRepositoryBootstrap:
         )
         db_session.add(repo_agent1)
         db_session.commit()
-        
+
         ensure_default_review_repository_agent(db_session, repo)
         db_session.commit()
-        
-        count = db_session.query(RepositoryAgent).filter_by(
-            repository_id=repo.id
-        ).count()
-        
+
+        count = (
+            db_session.query(RepositoryAgent).filter_by(repository_id=repo.id).count()
+        )
+
         assert count == 1
-        
-        repo_agent2 = db_session.query(RepositoryAgent).filter_by(
-            repository_id=repo.id
-        ).first()
+
+        repo_agent2 = (
+            db_session.query(RepositoryAgent).filter_by(repository_id=repo.id).first()
+        )
         assert repo_agent2.enabled is False
         assert repo_agent2.config_json == {"mode": "manual"}
 

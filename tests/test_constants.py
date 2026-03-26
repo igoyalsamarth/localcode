@@ -73,11 +73,20 @@ class TestConstants:
 
     def test_daytona_sandbox_home_custom(self):
         """Test custom Daytona home via ``DAYTONA_AGENT_HOME``."""
-        with patch.dict(
-            os.environ, {"DAYTONA_AGENT_HOME": "/custom/home"}, clear=True
-        ):
+        with patch.dict(os.environ, {"DAYTONA_AGENT_HOME": "/custom/home"}, clear=True):
             home = daytona_sandbox_home()
             assert home == "/custom/home"
+
+    def test_daytona_sandbox_home_agent_env_preferred(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DAYTONA_CODER_HOME": "/legacy",
+                "DAYTONA_AGENT_HOME": "/agent",
+            },
+            clear=True,
+        ):
+            assert daytona_sandbox_home() == "/agent"
 
     def test_git_identity_from_env_not_set(self):
         """Test git identity returns None when not set."""

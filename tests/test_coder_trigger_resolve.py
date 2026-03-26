@@ -65,7 +65,10 @@ class TestResolveCoderIssueWork:
 
     def test_wrong_action_returns_none(self, db_session):
         self._seed(db_session)
-        assert resolve_coder_issue_work(db_session, _issue_payload(action="closed")) is None
+        assert (
+            resolve_coder_issue_work(db_session, _issue_payload(action="closed"))
+            is None
+        )
 
     def test_missing_repo_id_returns_none(self, db_session):
         self._seed(db_session)
@@ -84,7 +87,10 @@ class TestResolveCoderIssueWork:
 
     def test_disabled_agent_returns_none(self, db_session):
         self._seed(db_session, enabled=False)
-        assert resolve_coder_issue_work(db_session, _issue_payload(action="opened")) is None
+        assert (
+            resolve_coder_issue_work(db_session, _issue_payload(action="opened"))
+            is None
+        )
 
     def test_auto_mode_opened_returns_work(self, db_session):
         self._seed(db_session, mode=TRIGGER_MODE_AUTO)
@@ -95,7 +101,10 @@ class TestResolveCoderIssueWork:
 
     def test_label_mode_opened_returns_none(self, db_session):
         self._seed(db_session, mode="label")
-        assert resolve_coder_issue_work(db_session, _issue_payload(action="opened")) is None
+        assert (
+            resolve_coder_issue_work(db_session, _issue_payload(action="opened"))
+            is None
+        )
 
     def test_label_mode_wrong_label_returns_none(self, db_session):
         self._seed(db_session, mode="label")

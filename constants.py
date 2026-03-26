@@ -6,6 +6,7 @@ load_dotenv()
 
 # LLM billing provider string stored on usage rows (Ollama, OpenAI, etc.)
 AGENT_LLM_PROVIDER = os.environ.get("AGENT_LLM_PROVIDER", "ollama")
+
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MAX_RETRIES = int(os.environ.get("OLLAMA_MAX_RETRIES", "10"))
 OLLAMA_TIMEOUT_SEC = int(os.environ.get("OLLAMA_TIMEOUT_SEC", "120"))
@@ -67,7 +68,6 @@ GIT_COMMITTER_EMAIL = os.environ.get("GIT_COMMITTER_EMAIL", "").strip()
 def daytona_sandbox_enabled() -> bool:
     """
     Use Daytona remote sandbox when ``DAYTONA_API_KEY`` is set.
-
     Set ``DAYTONA_AGENT_ENABLED=false`` to force the local ``LocalShellBackend`` even
     if a key exists.
     """
@@ -84,7 +84,6 @@ def daytona_sandbox_enabled() -> bool:
 def daytona_sandbox_home() -> str:
     """
     Default OS home inside the TypeScript Daytona snapshot (used for ``WORKFLOW_REPO_ABS`` / ``PATH``).
-
     Override via ``DAYTONA_AGENT_HOME`` if your image differs.
     """
     h = os.environ.get("DAYTONA_AGENT_HOME", "").strip()
