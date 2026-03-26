@@ -1,5 +1,5 @@
 """
-Persist LLM token usage for the GitHub review workflow (pricing / planning).
+Persist LLM token usage for GitHub deep-agent runs (issue code + PR review).
 """
 
 from __future__ import annotations
@@ -10,10 +10,12 @@ from uuid import UUID
 
 from sqlalchemy import select
 
-from agents.usage_callback import CoderLlmUsageCallbackHandler
+from agents.usage_callback import AgentLlmUsageCallbackHandler
 from db import session_scope
 from logger import get_logger
-from model.tables import CoderWorkflowUsage, Model, Repository
+from model.enums import GitHubWorkflowKind
+from model.tables import AgentWorkflowUsage, Model, Repository
+from services.github.issue_payload import IssueOpenedForCoder
 from services.github.pr_payload import PROpenedForReview
 
 logger = get_logger(__name__)
@@ -71,12 +73,12 @@ def _compute_cost_and_catalog_model(
     return total, first
 
 
-def _resolve_repo(
-    session, pr: PROpenedForReview
+def _resolve_repo_by_owner_name(
+    session, owner: str, repo_name: str
 ) -> tuple[UUID | None, UUID | None]:
     stmt = select(Repository).where(
-        Repository.owner == pr.owner,
-        Repository.name == pr.repo_name,
+        Repository.owner == owner,
+        Repository.name == repo_name,
     )
     repo = session.execute(stmt).scalar_one_or_none()
     if repo is None:
@@ -84,30 +86,31 @@ def _resolve_repo(
     return repo.id, repo.organization_id
 
 
-def record_review_workflow_usage(
-    pr: PROpenedForReview,
-    thread_id: str,
-    usage_cb: CoderLlmUsageCallbackHandler,
+def record_github_workflow_usage(
     *,
+    workflow: GitHubWorkflowKind,
+    owner: str,
+    repo_name: str,
+    github_full_name: str,
+    github_item_number: int,
+    thread_id: str,
+    usage_cb: AgentLlmUsageCallbackHandler,
     provider: str,
     fallback_model_name: str,
 ) -> None:
     """
-    Insert one ``CoderWorkflowUsage`` row after a review agent run.
+    Insert one ``AgentWorkflowUsage`` row after an agent run.
 
-    Reuses the same table as coder workflow for simplicity; differentiates by thread_id pattern.
-    Does not raise — logs on failure so billing never breaks the reviewer.
+    Does not raise — logs on failure so billing never breaks the workflow.
     """
     raw = dict(usage_cb.usage_metadata)
     serializable = _usage_to_json(raw) if raw else None
     inp, out, total = _sum_tokens(raw)
-    model_label = (
-        ", ".join(sorted(raw.keys())) if raw else fallback_model_name
-    )
+    model_label = ", ".join(sorted(raw.keys())) if raw else fallback_model_name
 
     try:
         with session_scope() as session:
-            repo_id, org_id = _resolve_repo(session, pr)
+            repo_id, org_id = _resolve_repo_by_owner_name(session, owner, repo_name)
             cost, catalog_model = _compute_cost_and_catalog_model(session, provider, raw)
             if catalog_model is None and raw:
                 stmt = select(Model).where(
@@ -121,11 +124,12 @@ def record_review_workflow_usage(
                         + catalog_model.output_cost_per_token * out
                     )
 
-            row = CoderWorkflowUsage(
+            row = AgentWorkflowUsage(
+                workflow=workflow,
                 organization_id=org_id,
                 repository_id=repo_id,
-                github_full_name=pr.full_name,
-                issue_number=pr.pr_number,
+                github_full_name=github_full_name,
+                github_item_number=github_item_number,
                 langgraph_thread_id=thread_id,
                 provider=provider,
                 model_name=model_label,
@@ -138,9 +142,10 @@ def record_review_workflow_usage(
             )
             session.add(row)
         logger.info(
-            "Recorded review workflow usage: %s#%s model=%s in=%s out=%s total=%s",
-            pr.full_name,
-            pr.pr_number,
+            "Recorded %s workflow usage: %s#%s model=%s in=%s out=%s total=%s",
+            workflow.value,
+            github_full_name,
+            github_item_number,
             model_label,
             inp,
             out,
@@ -148,7 +153,50 @@ def record_review_workflow_usage(
         )
     except Exception:
         logger.exception(
-            "Failed to record review workflow usage for %s#%s",
-            pr.full_name,
-            pr.pr_number,
+            "Failed to record %s workflow usage for %s#%s",
+            workflow.value,
+            github_full_name,
+            github_item_number,
         )
+
+
+def record_issue_workflow_usage(
+    issue: IssueOpenedForCoder,
+    thread_id: str,
+    usage_cb: AgentLlmUsageCallbackHandler,
+    *,
+    provider: str,
+    fallback_model_name: str,
+) -> None:
+    record_github_workflow_usage(
+        workflow=GitHubWorkflowKind.code,
+        owner=issue.owner,
+        repo_name=issue.repo_name,
+        github_full_name=issue.full_name,
+        github_item_number=issue.issue_number,
+        thread_id=thread_id,
+        usage_cb=usage_cb,
+        provider=provider,
+        fallback_model_name=fallback_model_name,
+    )
+
+
+def record_pr_workflow_usage(
+    pr: PROpenedForReview,
+    thread_id: str,
+    usage_cb: AgentLlmUsageCallbackHandler,
+    *,
+    provider: str,
+    fallback_model_name: str,
+) -> None:
+    record_github_workflow_usage(
+        workflow=GitHubWorkflowKind.review,
+        owner=pr.owner,
+        repo_name=pr.repo_name,
+        github_full_name=pr.full_name,
+        github_item_number=pr.pr_number,
+        thread_id=thread_id,
+        usage_cb=usage_cb,
+        provider=provider,
+        fallback_model_name=fallback_model_name,
+    )

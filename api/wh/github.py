@@ -1,4 +1,4 @@
-"""Unified GitHub webhook: App installation + issues (coder agent)."""
+"""Unified GitHub webhook: App installation, issue workflow, and PR review workflow."""
 
 import json
 from typing import Any

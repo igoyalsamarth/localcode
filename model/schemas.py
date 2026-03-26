@@ -9,16 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from model.enums import (
-    AgentType,
-    BillingCycle,
-    CommentSeverity,
-    MemberRole,
-    ReviewFileStatus,
-    ReviewStatus,
-    SubscriptionStatus,
-    TriggeredBy,
-)
+from model.enums import AgentType, BillingCycle, MemberRole, SubscriptionStatus
 
 
 def _orm_config() -> ConfigDict:
@@ -197,128 +188,6 @@ class RepositoryAgent(RepositoryAgentBase):
     created_at: datetime | None = None
 
 
-class OrganizationModelKeyBase(BaseModel):
-    organization_id: UUID
-    provider: str
-    encrypted_api_key: str
-    is_active: bool = True
-
-
-class OrganizationModelKeyCreate(OrganizationModelKeyBase):
-    pass
-
-
-class OrganizationModelKey(OrganizationModelKeyBase):
-    model_config = _orm_config()
-
-    id: UUID
-    created_at: datetime | None = None
-
-
-# ---------------------------------------------------------------------------
-# Pull Requests & Reviews
-# ---------------------------------------------------------------------------
-
-
-class PullRequestBase(BaseModel):
-    repository_id: UUID
-    github_pr_id: int
-    number: int
-    title: str
-    author: str
-    base_branch: str
-    head_branch: str
-
-
-class PullRequestCreate(PullRequestBase):
-    pass
-
-
-class PullRequest(PullRequestBase):
-    model_config = _orm_config()
-
-    id: UUID
-    created_at: datetime | None = None
-
-
-class ReviewRunBase(BaseModel):
-    pull_request_id: UUID
-    agent_id: UUID
-    repository_id: UUID
-    status: ReviewStatus = ReviewStatus.queued
-    triggered_by: TriggeredBy
-    model_id: UUID
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
-
-
-class ReviewRunCreate(ReviewRunBase):
-    pass
-
-
-class ReviewRun(ReviewRunBase):
-    model_config = _orm_config()
-
-    id: UUID
-
-
-class ReviewFileBase(BaseModel):
-    review_run_id: UUID
-    file_path: str
-    additions: int = 0
-    deletions: int = 0
-    status: ReviewFileStatus = ReviewFileStatus.pending
-
-
-class ReviewFileCreate(ReviewFileBase):
-    pass
-
-
-class ReviewFile(ReviewFileBase):
-    model_config = _orm_config()
-
-    id: UUID
-
-
-class ReviewCommentBase(BaseModel):
-    review_run_id: UUID
-    file_path: str
-    line_number: int | None = None
-    comment: str
-    severity: CommentSeverity = CommentSeverity.info
-
-
-class ReviewCommentCreate(ReviewCommentBase):
-    pass
-
-
-class ReviewComment(ReviewCommentBase):
-    model_config = _orm_config()
-
-    id: UUID
-    created_at: datetime | None = None
-
-
-class TokenUsageBase(BaseModel):
-    review_run_id: UUID
-    organization_id: UUID
-    model_id: UUID
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cost: Decimal = Decimal("0")
-
-
-class TokenUsageCreate(TokenUsageBase):
-    pass
-
-
-class TokenUsage(TokenUsageBase):
-    model_config = _orm_config()
-
-    id: UUID
-    created_at: datetime | None = None
-
-
 # ---------------------------------------------------------------------------
 # Subscriptions
 # ---------------------------------------------------------------------------
@@ -335,47 +204,6 @@ class SubscriptionCreate(SubscriptionBase):
 
 
 class Subscription(SubscriptionBase):
-    model_config = _orm_config()
-
-    id: UUID
-    created_at: datetime | None = None
-
-
-class SubscriptionAgentBase(BaseModel):
-    subscription_id: UUID
-    agent_id: UUID
-    price: Decimal
-    active: bool = True
-
-
-class SubscriptionAgentCreate(SubscriptionAgentBase):
-    pass
-
-
-class SubscriptionAgent(SubscriptionAgentBase):
-    model_config = _orm_config()
-
-    id: UUID
-    created_at: datetime | None = None
-
-
-# ---------------------------------------------------------------------------
-# Events
-# ---------------------------------------------------------------------------
-
-
-class GitHubEventBase(BaseModel):
-    installation_id: int
-    event_type: str
-    payload_json: dict
-    processed: bool = False
-
-
-class GitHubEventCreate(GitHubEventBase):
-    pass
-
-
-class GitHubEvent(GitHubEventBase):
     model_config = _orm_config()
 
     id: UUID

@@ -10,9 +10,11 @@ omit =
     */agents/github_reviewer.py
     */agents/checkpoint.py
     */agents/usage_callback.py
+    */agents/github_llm.py
+    */agents/deep_agent_stream.py
     */services/github/coder_workflow.py
     */services/github/review_workflow.py
-    */services/github/coder_daytona.py
+    */services/github/agent_daytona.py
     */task_queue/tasks.py
     */services_entrypoints/*
 

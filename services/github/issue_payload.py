@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from services.github.coder_labels import CODE as CODER_LABEL_QUEUE
+from services.github.greagent_labels import CODE as CODE_LABEL_QUEUE
 
 
 class IssueOpenedForCoder(BaseModel):
@@ -85,7 +85,7 @@ class IssueOpenedForCoder(BaseModel):
 
         if (
             not isinstance(label_name, str)
-            or label_name.strip() != CODER_LABEL_QUEUE
+            or label_name.strip() != CODE_LABEL_QUEUE
         ):
             return None
 

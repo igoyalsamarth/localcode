@@ -8,8 +8,11 @@ logger = get_logger(__name__)
 
 dramatiq.set_broker(broker)
 
+# Shared queue policy for GitHub deep-agent workers (issue + PR).
+_GITHUB_AGENT_ACTOR_OPTIONS = {"max_retries": 3, "time_limit": 3600000}
 
-@dramatiq.actor(queue_name="github_coder", max_retries=3, time_limit=3600000)
+
+@dramatiq.actor(queue_name="github_coder", **_GITHUB_AGENT_ACTOR_OPTIONS)
 def process_github_issue(issue_data: dict) -> None:
     """
     Process a GitHub issue with the coder agent.
@@ -89,7 +92,7 @@ def process_github_issue(issue_data: dict) -> None:
         raise
 
 
-@dramatiq.actor(queue_name="github_reviewer", max_retries=3, time_limit=3600000)
+@dramatiq.actor(queue_name="github_reviewer", **_GITHUB_AGENT_ACTOR_OPTIONS)
 def process_github_pr_review(pr_data: dict) -> None:
     """
     Process a GitHub PR with the review agent.

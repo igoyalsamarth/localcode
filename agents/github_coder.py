@@ -17,25 +17,25 @@ from pathlib import Path
 
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
-from langchain_ollama import ChatOllama
 
-from agents.checkpoint import coder_thread_id, get_checkpointer
-from agents.usage_callback import CoderLlmUsageCallbackHandler
+from agents.checkpoint import get_checkpointer, github_issue_workflow_thread_id
+from agents.deep_agent_stream import stream_deep_agent
+from agents.github_llm import get_github_deep_agent_llm
+from agents.usage_callback import AgentLlmUsageCallbackHandler
 from constants import (
-    CODER_LLM_PROVIDER,
-    OLLAMA_BASE_URL,
-    daytona_coder_enabled,
-    daytona_coder_home,
-    get_coder_model_name,
+    AGENT_LLM_PROVIDER,
+    daytona_sandbox_enabled,
+    daytona_sandbox_home,
+    get_agent_model_name,
     git_identity_from_env,
 )
 from logger import get_logger
-from services.github.coder_usage import record_coder_workflow_usage
-from services.github.coder_daytona import (
+from services.github.agent_daytona import (
     build_sandbox_env_vars,
-    create_daytona_coder_session,
+    create_daytona_agent_session,
     stop_sandbox,
 )
+from services.github.workflow_usage import record_issue_workflow_usage
 from services.github.installation_token import (
     get_installation_token_for_repo,
     github_bot_git_identity,
@@ -100,34 +100,26 @@ def build_coder_system_prompt(
     *,
     daytona: bool,
     repo_name: str,
-    coder_repo_abs: str | None,
-    coder_home: str | None = None,
+    workflow_repo_abs: str | None,
+    sandbox_home: str | None = None,
 ) -> str:
     """Augment base instructions with backend-specific path hints (Daytona vs local VFS)."""
     if not daytona:
         return _BASE_INSTRUCTIONS
-    home = coder_home or daytona_coder_home()
-    abs_hint = coder_repo_abs or ""
+    home = sandbox_home or daytona_sandbox_home()
+    abs_hint = workflow_repo_abs or ""
     return (
         _BASE_INSTRUCTIONS
         + f"""
 
 ## Daytona sandbox (this run)
 
-- After clone, this repository’s files are under **{abs_hint}** (also in ``$CODER_REPO_ABS``).
+- After clone, this repository’s files are under **{abs_hint}** (also in ``$WORKFLOW_REPO_ABS``).
 - For ``read_file`` / ``write_file`` / ``edit_file``, use that **absolute** path prefix — do not invent roots like ``/repo/`` or top-level ``/repos/`` (those are wrong).
 - Shell ``pwd`` is usually your home (e.g. ``{home}``); ``repos/{repo_name}`` is relative to that home.
-- If unsure, run ``printenv CODER_REPO_ABS`` once instead of searching the filesystem.
+- If unsure, run ``printenv WORKFLOW_REPO_ABS`` once instead of searching the filesystem.
 """
     )
-
-llm = ChatOllama(
-    model=get_coder_model_name(),
-    base_url=OLLAMA_BASE_URL,
-    max_retries=10,
-    timeout=120,
-)
-
 
 def create_github_coder_agent(backend: object, *, system_prompt: str) -> object:
     """
@@ -137,55 +129,11 @@ def create_github_coder_agent(backend: object, *, system_prompt: str) -> object:
     so ``inherit_env=True`` snapshots ``GH_TOKEN`` and git identity.
     """
     return create_deep_agent(
-        model=llm,
+        model=get_github_deep_agent_llm(),
         system_prompt=system_prompt,
         backend=backend,
         checkpointer=get_checkpointer(),
     )
-
-
-def _stream_agent(agent: object, user_prompt: str, config: dict) -> None:
-    for chunk in agent.stream(
-        {
-            "messages": [
-                {
-                    "role": "user",
-                    "content": user_prompt,
-                }
-            ]
-        },
-        config,
-        stream_mode="messages",
-        subgraphs=True,
-        version="v2",
-    ):
-        if chunk["type"] == "messages":
-            msg, _metadata = chunk["data"]
-
-            is_subagent = any(s.startswith("tools:") for s in chunk["ns"])
-            source = (
-                next((s for s in chunk["ns"] if s.startswith("tools:")), "main")
-                if is_subagent
-                else "main"
-            )
-
-            tool_call_chunks = getattr(msg, "tool_call_chunks", None) or []
-            if tool_call_chunks:
-                for tc in tool_call_chunks:
-                    if tc.get("name"):
-                        print(f"[{source}] Tool call: {tc['name']}")
-                    if tc.get("args"):
-                        print(tc["args"], end="", flush=True)
-
-            if msg.type == "tool":
-                print(
-                    f"[{source}] Tool result [{msg.name}]: {str(msg.content)[:150]}"
-                )
-
-            if msg.type == "ai" and msg.content and not tool_call_chunks:
-                print(msg.content, end="", flush=True)
-
-        print()
 
 
 def run_agent_on_issue(
@@ -227,14 +175,14 @@ def run_agent_on_issue(
 
     full_name = issue.full_name
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
-    use_daytona = daytona_coder_enabled()
-    coder_home = daytona_coder_home()
-    coder_repo_abs = f"{coder_home}/repos/{issue.repo_name}"
+    use_daytona = daytona_sandbox_enabled()
+    sandbox_home = daytona_sandbox_home()
+    workflow_repo_abs = f"{sandbox_home}/repos/{issue.repo_name}"
     system_prompt = build_coder_system_prompt(
         daytona=use_daytona,
         repo_name=issue.repo_name,
-        coder_repo_abs=coder_repo_abs if use_daytona else None,
-        coder_home=coder_home,
+        workflow_repo_abs=workflow_repo_abs if use_daytona else None,
+        sandbox_home=sandbox_home,
     )
     prompt = f"""In the repository {issue.repo_url} (repo folder: repos/{issue.repo_name}):
 
@@ -254,8 +202,9 @@ Please implement the requested changes:
 9. Comment on the issue that the PR was opened and include the PR link.
 
 """
-    thread_id = coder_thread_id(issue.full_name, issue.issue_number)
-    usage_cb = CoderLlmUsageCallbackHandler()
+    thread_id = github_issue_workflow_thread_id(issue.full_name, issue.issue_number)
+    usage_cb = AgentLlmUsageCallbackHandler()
+    llm = get_github_deep_agent_llm()
     llm.callbacks = [usage_cb]
     stream_config: dict = {
         "configurable": {"thread_id": thread_id},
@@ -274,14 +223,14 @@ Please implement the requested changes:
                 git_author=git_author_pair,
                 git_committer=git_committer_pair,
                 repo_name=issue.repo_name,
-                coder_home=coder_home,
+                sandbox_home=sandbox_home,
             )
-            backend, session = create_daytona_coder_session(
-                thread_id, env_vars, coder_home=coder_home
+            backend, session = create_daytona_agent_session(
+                thread_id, env_vars, sandbox_home=sandbox_home
             )
             daytona_session = session
             agent = create_github_coder_agent(backend, system_prompt=system_prompt)
-            _stream_agent(agent, prompt, stream_config)
+            stream_deep_agent(agent, prompt, stream_config)
         else:
             logger.info(
                 "GitHub coder using local LocalShellBackend under ./workspace "
@@ -299,14 +248,14 @@ Please implement the requested changes:
                     inherit_env=True,
                 )
                 agent = create_github_coder_agent(backend, system_prompt=system_prompt)
-                _stream_agent(agent, prompt, stream_config)
+                stream_deep_agent(agent, prompt, stream_config)
     finally:
         llm.callbacks = None
         stop_sandbox(daytona_session)
-        record_coder_workflow_usage(
+        record_issue_workflow_usage(
             issue,
             thread_id,
             usage_cb,
-            provider=CODER_LLM_PROVIDER,
-            fallback_model_name=get_coder_model_name(),
+            provider=AGENT_LLM_PROVIDER,
+            fallback_model_name=get_agent_model_name(),
         )

@@ -1,8 +1,8 @@
 """
 FastAPI application setup for LocalCode webhook server.
 
-When someone adds the ``greagent:code`` label to an issue, the webhook runs the
-coder agent: in-progress / done / error labels, PR, and issue comment.
+GitHub webhooks drive deep agents: issue workflow (``greagent:code`` / auto mode) and
+PR workflow (``greagent:review`` / auto on sync), with Dramatiq workers processing runs.
 """
 
 from contextlib import asynccontextmanager

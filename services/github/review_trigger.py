@@ -14,11 +14,9 @@ from sqlalchemy.orm import Session
 
 from model.enums import AgentType
 from model.tables import Agent, Repository, RepositoryAgent
-from services.github.coder_labels import REVIEW as REVIEW_LABEL_QUEUE
+from services.github.greagent_labels import REVIEW as REVIEW_LABEL_QUEUE
 from services.github.pr_payload import PROpenedForReview
-
-REVIEW_MODE_TAG = "tag"
-REVIEW_MODE_AUTO = "auto"
+from services.github.trigger_modes import TRIGGER_MODE_AUTO, TRIGGER_MODE_TAG
 
 
 def resolve_review_pr_work(
@@ -57,8 +55,8 @@ def resolve_review_pr_work(
     if not ra or not ra.enabled:
         return None
 
-    raw_mode = (ra.config_json or {}).get("mode", REVIEW_MODE_TAG)
-    is_auto = str(raw_mode).lower() == REVIEW_MODE_AUTO
+    raw_mode = (ra.config_json or {}).get("mode", TRIGGER_MODE_TAG)
+    is_auto = str(raw_mode).lower() == TRIGGER_MODE_AUTO
 
     if action in ("opened", "synchronize"):
         if not is_auto:

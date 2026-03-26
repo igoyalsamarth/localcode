@@ -12,7 +12,7 @@ from services.github.client import (
     ensure_repo_label_exists,
     remove_pr_label,
 )
-from services.github.coder_labels import ERROR, REVIEW, REVIEWED
+from services.github.greagent_labels import ERROR, REVIEW, REVIEWED
 from services.github.installation_token import (
     get_api_token_for_repo,
     get_installation_token_for_repo,

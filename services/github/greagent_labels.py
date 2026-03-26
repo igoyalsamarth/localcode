@@ -1,11 +1,11 @@
-"""Greagent issue and PR labels — queue, progress, outcome."""
+"""Greagent GitHub labels for issue and PR workflows (queue, progress, outcome)."""
 
-# Issue labels (coder agent)
+# Issue workflow
 CODE = "greagent:code"
 IN_PROGRESS = "greagent:in-progress"
 DONE = "greagent:done"
 ERROR = "greagent:error"
 
-# PR labels (review agent)
+# Pull request workflow
 REVIEW = "greagent:review"
 REVIEWED = "greagent:reviewed"

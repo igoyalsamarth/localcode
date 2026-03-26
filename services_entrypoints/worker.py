@@ -1,6 +1,6 @@
 """
 Service 3: Worker Service
-Dramatiq worker that consumes tasks from RabbitMQ and executes the GitHub coder agent.
+Dramatiq worker that consumes GitHub deep-agent tasks from RabbitMQ (issue + PR queues).
 Multiple instances can run in parallel for horizontal scaling.
 """
 
@@ -21,8 +21,8 @@ def main() -> None:
     """
     Start the Dramatiq worker process.
     
-    This worker will consume tasks from the 'github_coder' queue and execute them.
-    Multiple worker instances can be started for parallel processing.
+    Loads ``task_queue.tasks`` so workers consume both ``github_coder`` and ``github_reviewer``
+    queues (and any other actors defined in that module).
     """
     logger.info("Starting LocalCode Worker service...")
     

@@ -1,1 +1,1 @@
-"""GitHub integration: REST client, webhook verification, issue payloads, coder workflow."""
+"""GitHub integration: REST client, webhooks, issue/PR payloads, and agent workflows."""
