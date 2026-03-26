@@ -2,8 +2,10 @@
 Map GitHub ``issues`` webhook payloads to coder work items using DB state.
 
 - ``mode: auto`` (default): trigger on ``opened`` / ``reopened``.
-- Any other ``mode`` (e.g. ``label``): trigger only when ``greagent:code`` is applied
-  (``labeled``).
+- Applying ``greagent:code`` (``labeled``) always starts a run when the agent is enabled,
+  including in auto mode (explicit rerun).
+- Any other ``mode`` (e.g. ``on_assignment`` / ``tag``): trigger only when ``greagent:code``
+  is applied — no auto run on open/reopen.
 """
 
 from __future__ import annotations
@@ -74,8 +76,6 @@ def resolve_coder_issue_work(
             not isinstance(label_name, str)
             or label_name.strip() != CODE_LABEL_QUEUE
         ):
-            return None
-        if is_auto:
             return None
         return IssueOpenedForCoder.from_github_issues_event(data)
 

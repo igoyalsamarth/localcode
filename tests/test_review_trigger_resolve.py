@@ -109,7 +109,9 @@ class TestResolveReviewPrWork:
         assert work is not None
         assert work.pr_number == 5
 
-    def test_auto_mode_labeled_returns_none(self, db_session):
+    def test_auto_mode_labeled_review_label_returns_work(self, db_session):
         self._seed(db_session, mode=TRIGGER_MODE_AUTO)
         p = _pr_payload(action="labeled", label_name="greagent:review")
-        assert resolve_review_pr_work(db_session, p) is None
+        work = resolve_review_pr_work(db_session, p)
+        assert work is not None
+        assert work.pr_number == 5

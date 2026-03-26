@@ -364,7 +364,7 @@ class TestRepositoryBootstrap:
         
         assert repo_agent is not None
         assert repo_agent.enabled is True
-        assert repo_agent.config_json == {"mode": TRIGGER_MODE_TAG}
+        assert repo_agent.config_json == {"mode": TRIGGER_MODE_AUTO}
         assert repo_agent.agent.type == AgentType.review
 
     def test_ensure_default_review_repository_agent_skips_existing(self, db_session):

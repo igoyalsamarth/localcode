@@ -57,15 +57,6 @@ class TestConstants:
         with patch.dict(os.environ, {"DAYTONA_API_KEY": "test_key"}, clear=True):
             assert daytona_sandbox_enabled() is True
 
-    def test_daytona_sandbox_enabled_explicitly_disabled(self):
-        """Test Daytona explicitly disabled via legacy env."""
-        with patch.dict(
-            os.environ,
-            {"DAYTONA_API_KEY": "test_key", "DAYTONA_CODER_ENABLED": "false"},
-            clear=True,
-        ):
-            assert daytona_sandbox_enabled() is False
-
     def test_daytona_sandbox_enabled_agent_flag_disabled(self):
         with patch.dict(
             os.environ,
@@ -80,22 +71,13 @@ class TestConstants:
             home = daytona_sandbox_home()
             assert home == "/home/daytona"
 
-    def test_daytona_sandbox_home_custom_legacy(self):
-        """Test custom Daytona home via legacy env."""
-        with patch.dict(os.environ, {"DAYTONA_CODER_HOME": "/custom/home"}, clear=True):
+    def test_daytona_sandbox_home_custom(self):
+        """Test custom Daytona home via ``DAYTONA_AGENT_HOME``."""
+        with patch.dict(
+            os.environ, {"DAYTONA_AGENT_HOME": "/custom/home"}, clear=True
+        ):
             home = daytona_sandbox_home()
             assert home == "/custom/home"
-
-    def test_daytona_sandbox_home_agent_env_preferred(self):
-        with patch.dict(
-            os.environ,
-            {
-                "DAYTONA_CODER_HOME": "/legacy",
-                "DAYTONA_AGENT_HOME": "/agent",
-            },
-            clear=True,
-        ):
-            assert daytona_sandbox_home() == "/agent"
 
     def test_git_identity_from_env_not_set(self):
         """Test git identity returns None when not set."""

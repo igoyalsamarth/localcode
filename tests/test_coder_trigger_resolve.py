@@ -109,7 +109,9 @@ class TestResolveCoderIssueWork:
         assert work is not None
         assert work.issue_number == 1
 
-    def test_auto_mode_labeled_returns_none(self, db_session):
+    def test_auto_mode_labeled_code_label_returns_work(self, db_session):
         self._seed(db_session, mode=TRIGGER_MODE_AUTO)
         p = _issue_payload(action="labeled", label_name="greagent:code")
-        assert resolve_coder_issue_work(db_session, p) is None
+        work = resolve_coder_issue_work(db_session, p)
+        assert work is not None
+        assert work.issue_number == 1
