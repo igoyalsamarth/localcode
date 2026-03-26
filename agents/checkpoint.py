@@ -85,11 +85,16 @@ def shutdown_checkpointer() -> None:
     _checkpointer = None
 
 
-def coder_thread_id(full_name: str, issue_number: int) -> str:
+def github_issue_workflow_thread_id(full_name: str, issue_number: int) -> str:
     """
-    Stable ``thread_id`` for ``config["configurable"]["thread_id"]``.
+    Stable ``thread_id`` for issue-coding runs (``config["configurable"]["thread_id"]``).
 
     The checkpointer keys state by ``thread_id``; reuse the same id to resume or
     inspect state via ``graph.get_state`` / ``get_state_history`` (see persistence docs).
     """
     return f"github:{full_name}#issue-{issue_number}"
+
+
+def github_pr_workflow_thread_id(full_name: str, pr_number: int) -> str:
+    """Stable ``thread_id`` for PR review deep-agent runs."""
+    return f"github:{full_name}#pr-{pr_number}"

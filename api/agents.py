@@ -4,80 +4,33 @@ from collections import defaultdict
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Body, HTTPException, Path, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 from sqlalchemy import String, cast, distinct, func, or_, select
-from sqlalchemy.orm import Session
 
+from api.deps import get_current_user_id
+from api.user_org import require_user_and_owned_org
 from db import session_scope
-from model.tables import (
-    User,
-    Organization,
-    Repository,
-    Agent,
-    RepositoryAgent,
-    Model,
-    CoderWorkflowUsage,
-)
-from model.enums import AgentType
 from logger import get_logger
+from model.enums import AgentType, GitHubWorkflowKind
+from model.tables import Agent, AgentWorkflowUsage, Model, Repository, RepositoryAgent
 from services.github.coder_workflow import ensure_greagent_labels_on_repository
-from services.github.repository_bootstrap import CODER_MODE_AUTO
+from services.github.trigger_modes import TRIGGER_MODE_AUTO
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
 
-def _get_current_user_org(session: Session) -> tuple[User, Organization]:
-    """Resolve the default user and their organization (same pattern as other agent routes)."""
-    stmt = select(User).order_by(User.created_at.desc()).limit(1)
-    user = session.execute(stmt).scalar_one_or_none()
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="User not found. Please authenticate first.",
-        )
-    stmt = select(Organization).where(Organization.owner_user_id == user.id)
-    org = session.execute(stmt).scalar_one_or_none()
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
-    return user, org
-
-
-def _get_organization_optional(session: Session) -> Organization | None:
-    """Same lookup as ``_get_current_user_org`` but returns None instead of 404."""
-    stmt = select(User).order_by(User.created_at.desc()).limit(1)
-    user = session.execute(stmt).scalar_one_or_none()
-    if not user:
-        return None
-    stmt = select(Organization).where(Organization.owner_user_id == user.id)
-    return session.execute(stmt).scalar_one_or_none()
-
-
-def _empty_coder_usage_response() -> dict:
-    """Payload when no user/org exists yet (e.g. before OAuth) — avoids 404 on the UI."""
-    return {
-        "summary": {
-            "runCount": 0,
-            "totalInputTokens": 0,
-            "totalOutputTokens": 0,
-            "totalTokens": 0,
-            "totalCost": "0",
-        },
-        "repositories": [],
-    }
-
-
-def _org_coder_usage_filter(org_id: UUID, repo_full_names: list[str]):
+def _org_workflow_usage_filter(org_id: UUID, repo_full_names: list[str]):
     """
     Usage rows for this org: recorded with organization_id, or matching a known repo
     full name (covers older rows before repository_id/org_id backfill).
     """
-    org_match = CoderWorkflowUsage.organization_id == org_id
+    org_match = AgentWorkflowUsage.organization_id == org_id
     if not repo_full_names:
         return org_match
-    return or_(org_match, CoderWorkflowUsage.github_full_name.in_(repo_full_names))
+    return or_(org_match, AgentWorkflowUsage.github_full_name.in_(repo_full_names))
 
 
 def _fmt_decimal_cost(value: Decimal | None) -> str:
@@ -92,26 +45,22 @@ class RepositoryConfigUpdate(BaseModel):
 
 
 @router.get("/coder/settings")
-async def get_coder_settings():
+async def get_coder_settings(user_id: UUID = Depends(get_current_user_id)):
     """
     Get repositories and their configurations for the coder agent.
-    
+
     Returns all repositories in the user's organization and their agent configurations.
-    
-    TODO: Get user_id from JWT token or session
     """
     with session_scope() as session:
-        _, org = _get_current_user_org(session)
+        _, org = require_user_and_owned_org(session, user_id)
 
-        # Get or create coder agent for this organization
         stmt = select(Agent).where(
             Agent.organization_id == org.id,
-            Agent.type == AgentType.code
+            Agent.type == AgentType.code,
         )
         agent = session.execute(stmt).scalar_one_or_none()
-        
+
         if not agent:
-            # Create default coder agent
             agent = Agent(
                 organization_id=org.id,
                 name="Code Agent",
@@ -120,56 +69,58 @@ async def get_coder_settings():
             session.add(agent)
             session.flush()
             logger.info(f"Created coder agent for org: {org.name}")
-        
-        # Get all repositories for this organization
+
         stmt = select(Repository).where(Repository.organization_id == org.id)
         repositories = session.execute(stmt).scalars().all()
-        
-        # Get all repository agent configurations
+
         stmt = select(RepositoryAgent).where(RepositoryAgent.agent_id == agent.id)
         repo_agents = session.execute(stmt).scalars().all()
-        
-        # Create a map of repository_id to configuration
+
         config_map = {
             str(ra.repository_id): {
                 "enabled": ra.enabled,
-                "mode": ra.config_json.get("mode", CODER_MODE_AUTO)
+                "mode": ra.config_json.get("mode", TRIGGER_MODE_AUTO)
                 if ra.config_json
-                else CODER_MODE_AUTO,
+                else TRIGGER_MODE_AUTO,
             }
             for ra in repo_agents
         }
-        
-        # Build response
+
         repositories_data = []
         configurations = []
-        
+
         for repo in repositories:
             repo_id_str = str(repo.id)
-            
-            repositories_data.append({
-                "id": repo.github_repo_id,
-                "name": repo.name,
-                "fullName": f"{repo.owner}/{repo.name}",
-                "private": repo.private,
-                "owner": repo.owner,
-                "description": None,  # TODO: Store description in webhook
-                "language": None,  # TODO: Store language in webhook
-                "updatedAt": repo.created_at.isoformat() if repo.created_at else None,
-            })
-            
+
+            repositories_data.append(
+                {
+                    "id": repo.github_repo_id,
+                    "name": repo.name,
+                    "fullName": f"{repo.owner}/{repo.name}",
+                    "private": repo.private,
+                    "owner": repo.owner,
+                    "description": None,
+                    "language": None,
+                    "updatedAt": repo.created_at.isoformat() if repo.created_at else None,
+                }
+            )
+
             if repo_id_str in config_map:
-                configurations.append({
-                    "repositoryId": repo.github_repo_id,
-                    **config_map[repo_id_str],
-                })
+                configurations.append(
+                    {
+                        "repositoryId": repo.github_repo_id,
+                        **config_map[repo_id_str],
+                    }
+                )
             else:
-                configurations.append({
-                    "repositoryId": repo.github_repo_id,
-                    "enabled": True,
-                    "mode": CODER_MODE_AUTO,
-                })
-        
+                configurations.append(
+                    {
+                        "repositoryId": repo.github_repo_id,
+                        "enabled": True,
+                        "mode": TRIGGER_MODE_AUTO,
+                    }
+                )
+
         return {
             "repositories": repositories_data,
             "configurations": configurations,
@@ -179,41 +130,33 @@ async def get_coder_settings():
 @router.put("/coder/repositories/{repository_id}")
 async def update_repository_config(
     repository_id: int = Path(...),
-    config: RepositoryConfigUpdate = Body(...)
+    config: RepositoryConfigUpdate = Body(...),
+    user_id: UUID = Depends(get_current_user_id),
 ):
     """
     Update repository configuration for the coder agent.
-    
-    Args:
-        repository_id: GitHub repository ID
-        config: Configuration with enabled status and mode
-    
-    Returns:
-        Updated configuration
     """
     with session_scope() as session:
-        _, org = _get_current_user_org(session)
+        _, org = require_user_and_owned_org(session, user_id)
 
-        # Get repository
         stmt = select(Repository).where(
             Repository.organization_id == org.id,
-            Repository.github_repo_id == repository_id
+            Repository.github_repo_id == repository_id,
         )
         repo = session.execute(stmt).scalar_one_or_none()
-        
+
         if not repo:
             raise HTTPException(
                 status_code=404,
-                detail="Repository not found"
+                detail="Repository not found",
             )
-        
-        # Get or create coder agent
+
         stmt = select(Agent).where(
             Agent.organization_id == org.id,
-            Agent.type == AgentType.code
+            Agent.type == AgentType.code,
         )
         agent = session.execute(stmt).scalar_one_or_none()
-        
+
         if not agent:
             agent = Agent(
                 organization_id=org.id,
@@ -222,34 +165,29 @@ async def update_repository_config(
             )
             session.add(agent)
             session.flush()
-        
-        # Get or create a default model (for now, use first available or create placeholder)
+
         stmt = select(Model).limit(1)
         model = session.execute(stmt).scalar_one_or_none()
-        
+
         if not model:
-            # Create a placeholder model
             model = Model(
                 provider="openai",
                 name="gpt-4",
             )
             session.add(model)
             session.flush()
-        
-        # Get or create repository agent configuration
+
         stmt = select(RepositoryAgent).where(
             RepositoryAgent.repository_id == repo.id,
-            RepositoryAgent.agent_id == agent.id
+            RepositoryAgent.agent_id == agent.id,
         )
         repo_agent = session.execute(stmt).scalar_one_or_none()
-        
+
         if repo_agent:
-            # Update existing configuration
             repo_agent.enabled = config.enabled
             repo_agent.config_json = {"mode": config.mode}
             logger.info(f"Updated repository agent config for repo: {repo.name}")
         else:
-            # Create new configuration
             repo_agent = RepositoryAgent(
                 repository_id=repo.id,
                 agent_id=agent.id,
@@ -259,7 +197,7 @@ async def update_repository_config(
             )
             session.add(repo_agent)
             logger.info(f"Created repository agent config for repo: {repo.name}")
-        
+
         session.commit()
 
         if config.enabled:
@@ -271,7 +209,7 @@ async def update_repository_config(
                     repo.owner,
                     repo.name,
                 )
-        
+
         return {
             "repositoryId": repository_id,
             "enabled": config.enabled,
@@ -279,40 +217,26 @@ async def update_repository_config(
         }
 
 
-@router.get("/coder/usage")
-async def get_coder_usage(
-    repo_limit: int = Query(50, ge=1, le=200, description="Max repositories in response"),
-    issue_limit: int = Query(
-        100,
-        ge=1,
-        le=500,
-        description="Max issue aggregates fetched (split across repos; nested under each)",
-    ),
-):
-    """
-    Aggregated GitHub coder workflow token usage for the current organization.
+def _workflow_usage_payload(
+    *,
+    org_id: UUID,
+    full_names: list[str],
+    repo_limit: int,
+    item_limit: int,
+    workflow: GitHubWorkflowKind | None,
+) -> dict:
+    filt = _org_workflow_usage_filter(org_id, full_names)
+    if workflow is not None:
+        filt = filt & (AgentWorkflowUsage.workflow == workflow)
 
-    Each repository entry includes an ``issues`` array (per-issue token totals),
-    sorted by ``lastRunAt`` descending within that repo.
-    """
     with session_scope() as session:
-        org = _get_organization_optional(session)
-        if org is None:
-            return _empty_coder_usage_response()
-
-        repos = session.execute(
-            select(Repository).where(Repository.organization_id == org.id)
-        ).scalars().all()
-        full_names = [f"{r.owner}/{r.name}" for r in repos]
-        filt = _org_coder_usage_filter(org.id, full_names)
-
         summary_row = session.execute(
             select(
-                func.count(CoderWorkflowUsage.id),
-                func.coalesce(func.sum(CoderWorkflowUsage.input_tokens), 0),
-                func.coalesce(func.sum(CoderWorkflowUsage.output_tokens), 0),
-                func.coalesce(func.sum(CoderWorkflowUsage.total_tokens), 0),
-                func.coalesce(func.sum(CoderWorkflowUsage.cost), Decimal("0")),
+                func.count(AgentWorkflowUsage.id),
+                func.coalesce(func.sum(AgentWorkflowUsage.input_tokens), 0),
+                func.coalesce(func.sum(AgentWorkflowUsage.output_tokens), 0),
+                func.coalesce(func.sum(AgentWorkflowUsage.total_tokens), 0),
+                func.coalesce(func.sum(AgentWorkflowUsage.cost), Decimal("0")),
             ).where(filt)
         ).one()
 
@@ -320,113 +244,191 @@ async def get_coder_usage(
 
         by_repo_stmt = (
             select(
-                CoderWorkflowUsage.github_full_name,
-                # PostgreSQL has no max(uuid) in many versions; aggregate as text.
-                func.max(cast(CoderWorkflowUsage.repository_id, String)).label(
+                AgentWorkflowUsage.github_full_name,
+                AgentWorkflowUsage.workflow,
+                func.max(cast(AgentWorkflowUsage.repository_id, String)).label(
                     "repository_id"
                 ),
-                func.count(distinct(CoderWorkflowUsage.issue_number)).label(
-                    "distinct_issues"
+                func.count(distinct(AgentWorkflowUsage.github_item_number)).label(
+                    "distinct_items"
                 ),
-                func.count(CoderWorkflowUsage.id).label("runs"),
-                func.coalesce(func.sum(CoderWorkflowUsage.input_tokens), 0).label(
+                func.count(AgentWorkflowUsage.id).label("runs"),
+                func.coalesce(func.sum(AgentWorkflowUsage.input_tokens), 0).label(
                     "input_tokens"
                 ),
-                func.coalesce(func.sum(CoderWorkflowUsage.output_tokens), 0).label(
+                func.coalesce(func.sum(AgentWorkflowUsage.output_tokens), 0).label(
                     "output_tokens"
                 ),
-                func.coalesce(func.sum(CoderWorkflowUsage.total_tokens), 0).label(
+                func.coalesce(func.sum(AgentWorkflowUsage.total_tokens), 0).label(
                     "total_tokens"
                 ),
-                func.coalesce(func.sum(CoderWorkflowUsage.cost), Decimal("0")).label(
+                func.coalesce(func.sum(AgentWorkflowUsage.cost), Decimal("0")).label(
                     "cost"
                 ),
             )
             .where(filt)
-            .group_by(CoderWorkflowUsage.github_full_name)
-            .order_by(func.coalesce(func.sum(CoderWorkflowUsage.total_tokens), 0).desc())
+            .group_by(
+                AgentWorkflowUsage.github_full_name,
+                AgentWorkflowUsage.workflow,
+            )
+            .order_by(
+                func.coalesce(func.sum(AgentWorkflowUsage.total_tokens), 0).desc()
+            )
             .limit(repo_limit)
         )
         by_repo_rows = session.execute(by_repo_stmt).all()
 
-        by_issue_stmt = (
+        by_item_stmt = (
             select(
-                CoderWorkflowUsage.github_full_name,
-                CoderWorkflowUsage.issue_number,
-                func.count(CoderWorkflowUsage.id).label("runs"),
-                func.coalesce(func.sum(CoderWorkflowUsage.input_tokens), 0).label(
+                AgentWorkflowUsage.github_full_name,
+                AgentWorkflowUsage.workflow,
+                AgentWorkflowUsage.github_item_number,
+                func.count(AgentWorkflowUsage.id).label("runs"),
+                func.coalesce(func.sum(AgentWorkflowUsage.input_tokens), 0).label(
                     "input_tokens"
                 ),
-                func.coalesce(func.sum(CoderWorkflowUsage.output_tokens), 0).label(
+                func.coalesce(func.sum(AgentWorkflowUsage.output_tokens), 0).label(
                     "output_tokens"
                 ),
-                func.coalesce(func.sum(CoderWorkflowUsage.total_tokens), 0).label(
+                func.coalesce(func.sum(AgentWorkflowUsage.total_tokens), 0).label(
                     "total_tokens"
                 ),
-                func.coalesce(func.sum(CoderWorkflowUsage.cost), Decimal("0")).label(
+                func.coalesce(func.sum(AgentWorkflowUsage.cost), Decimal("0")).label(
                     "cost"
                 ),
-                func.max(CoderWorkflowUsage.created_at).label("last_run_at"),
+                func.max(AgentWorkflowUsage.created_at).label("last_run_at"),
             )
             .where(filt)
             .group_by(
-                CoderWorkflowUsage.github_full_name,
-                CoderWorkflowUsage.issue_number,
+                AgentWorkflowUsage.github_full_name,
+                AgentWorkflowUsage.workflow,
+                AgentWorkflowUsage.github_item_number,
             )
-            .order_by(func.max(CoderWorkflowUsage.created_at).desc())
-            .limit(issue_limit)
+            .order_by(func.max(AgentWorkflowUsage.created_at).desc())
+            .limit(item_limit)
         )
-        by_issue_rows = session.execute(by_issue_stmt).all()
+        by_item_rows = session.execute(by_item_stmt).all()
 
-        issues_by_full_name: dict[str, list[dict]] = defaultdict(list)
-        for row in by_issue_rows:
-            last_at = (
-                row.last_run_at.isoformat() if row.last_run_at else None
-            )
-            issues_by_full_name[row.github_full_name].append(
-                {
-                    "issueNumber": int(row.issue_number),
-                    "runCount": int(row.runs or 0),
-                    "totalInputTokens": int(row.input_tokens or 0),
-                    "totalOutputTokens": int(row.output_tokens or 0),
-                    "totalTokens": int(row.total_tokens or 0),
-                    "totalCost": _fmt_decimal_cost(row.cost),
-                    "lastRunAt": last_at,
-                }
-            )
+    items_by_key: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for row in by_item_rows:
+        key = (row.github_full_name, row.workflow.value)
+        last_at = row.last_run_at.isoformat() if row.last_run_at else None
+        items_by_key[key].append(
+            {
+                "workflow": row.workflow.value,
+                "itemNumber": int(row.github_item_number),
+                "runCount": int(row.runs or 0),
+                "totalInputTokens": int(row.input_tokens or 0),
+                "totalOutputTokens": int(row.output_tokens or 0),
+                "totalTokens": int(row.total_tokens or 0),
+                "totalCost": _fmt_decimal_cost(row.cost),
+                "lastRunAt": last_at,
+            }
+        )
 
-        for fn in issues_by_full_name:
-            issues_by_full_name[fn].sort(
-                key=lambda x: x["lastRunAt"] or "",
-                reverse=True,
-            )
+    for key in items_by_key:
+        items_by_key[key].sort(
+            key=lambda x: x["lastRunAt"] or "",
+            reverse=True,
+        )
 
-        repositories_out = []
-        for row in by_repo_rows:
-            fn = row.github_full_name
-            repositories_out.append(
-                {
-                    "githubFullName": fn,
-                    "repositoryId": str(row.repository_id)
-                    if row.repository_id is not None
-                    else None,
-                    "distinctIssueCount": int(row.distinct_issues or 0),
-                    "runCount": int(row.runs or 0),
-                    "totalInputTokens": int(row.input_tokens or 0),
-                    "totalOutputTokens": int(row.output_tokens or 0),
-                    "totalTokens": int(row.total_tokens or 0),
-                    "totalCost": _fmt_decimal_cost(row.cost),
-                    "issues": issues_by_full_name.get(fn, []),
-                }
-            )
+    repositories_out = []
+    for row in by_repo_rows:
+        key = (row.github_full_name, row.workflow.value)
+        wf = row.workflow.value
+        repositories_out.append(
+            {
+                "githubFullName": row.github_full_name,
+                "workflow": wf,
+                "repositoryId": str(row.repository_id)
+                if row.repository_id is not None
+                else None,
+                "distinctItemCount": int(row.distinct_items or 0),
+                "runCount": int(row.runs or 0),
+                "totalInputTokens": int(row.input_tokens or 0),
+                "totalOutputTokens": int(row.output_tokens or 0),
+                "totalTokens": int(row.total_tokens or 0),
+                "totalCost": _fmt_decimal_cost(row.cost),
+                "items": items_by_key.get(key, []),
+            }
+        )
 
-        return {
-            "summary": {
-                "runCount": int(run_count or 0),
-                "totalInputTokens": int(sum_in or 0),
-                "totalOutputTokens": int(sum_out or 0),
-                "totalTokens": int(sum_total or 0),
-                "totalCost": _fmt_decimal_cost(sum_cost),
-            },
-            "repositories": repositories_out,
-        }
+    return {
+        "summary": {
+            "runCount": int(run_count or 0),
+            "totalInputTokens": int(sum_in or 0),
+            "totalOutputTokens": int(sum_out or 0),
+            "totalTokens": int(sum_total or 0),
+            "totalCost": _fmt_decimal_cost(sum_cost),
+        },
+        "repositories": repositories_out,
+    }
+
+
+@router.get("/usage")
+async def get_workflow_usage(
+    user_id: UUID = Depends(get_current_user_id),
+    workflow: GitHubWorkflowKind | None = Query(
+        None,
+        description="Filter by workflow: code (issues) or review (PRs). Omit for all.",
+    ),
+    repo_limit: int = Query(50, ge=1, le=200, description="Max repository/workflow rows"),
+    item_limit: int = Query(
+        100,
+        ge=1,
+        le=500,
+        description="Max item aggregates (split across repos/workflows)",
+    ),
+):
+    """
+    Aggregated token usage for GitHub deep-agent runs, filterable by ``workflow``.
+
+    Each repository entry is scoped to one workflow (``code`` or ``review``). Nested
+    ``items`` include the same ``workflow`` plus ``itemNumber`` (issue or PR number).
+    """
+    with session_scope() as session:
+        _, org = require_user_and_owned_org(session, user_id)
+        repos = session.execute(
+            select(Repository).where(Repository.organization_id == org.id)
+        ).scalars().all()
+        full_names = [f"{r.owner}/{r.name}" for r in repos]
+
+    return _workflow_usage_payload(
+        org_id=org.id,
+        full_names=full_names,
+        repo_limit=repo_limit,
+        item_limit=item_limit,
+        workflow=workflow,
+    )
+
+
+@router.get("/coder/usage")
+async def get_coder_usage_legacy(
+    user_id: UUID = Depends(get_current_user_id),
+    repo_limit: int = Query(50, ge=1, le=200),
+    issue_limit: int = Query(100, ge=1, le=500),
+):
+    """
+    Same data as ``GET /agents/usage?workflow=code`` with legacy response shape (``issues``).
+    """
+    with session_scope() as session:
+        _, org = require_user_and_owned_org(session, user_id)
+        repos = session.execute(
+            select(Repository).where(Repository.organization_id == org.id)
+        ).scalars().all()
+        full_names = [f"{r.owner}/{r.name}" for r in repos]
+
+    payload = _workflow_usage_payload(
+        org_id=org.id,
+        full_names=full_names,
+        repo_limit=repo_limit,
+        item_limit=issue_limit,
+        workflow=GitHubWorkflowKind.code,
+    )
+    for repo in payload["repositories"]:
+        repo["distinctIssueCount"] = repo.pop("distinctItemCount")
+        repo["issues"] = repo.pop("items")
+        for item in repo["issues"]:
+            item["issueNumber"] = item.pop("itemNumber")
+            item.pop("workflow", None)
+    return payload

@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from agents.usage_callback import (
-    CoderLlmUsageCallbackHandler,
+    AgentLlmUsageCallbackHandler,
     _model_label_from_message,
 )
 from langchain_core.messages import AIMessage
@@ -66,8 +66,8 @@ class TestUsageCallback:
         assert label == "unknown"
 
     def test_coder_llm_usage_callback_handler_initialization(self):
-        """Test CoderLlmUsageCallbackHandler initialization."""
-        handler = CoderLlmUsageCallbackHandler()
+        """Test AgentLlmUsageCallbackHandler initialization."""
+        handler = AgentLlmUsageCallbackHandler()
         
         assert handler is not None
         assert hasattr(handler, "usage_metadata")
@@ -75,7 +75,7 @@ class TestUsageCallback:
 
     def test_coder_llm_usage_callback_handler_on_llm_end_with_usage(self):
         """Test on_llm_end accumulates usage metadata."""
-        handler = CoderLlmUsageCallbackHandler()
+        handler = AgentLlmUsageCallbackHandler()
         
         message = AIMessage(
             content="test response",
@@ -99,7 +99,7 @@ class TestUsageCallback:
 
     def test_coder_llm_usage_callback_handler_accumulates_usage(self):
         """Test that usage is accumulated across multiple calls."""
-        handler = CoderLlmUsageCallbackHandler()
+        handler = AgentLlmUsageCallbackHandler()
         
         message1 = AIMessage(
             content="response 1",
@@ -136,7 +136,7 @@ class TestUsageCallback:
 
     def test_coder_llm_usage_callback_handler_multiple_models(self):
         """Test usage tracking for multiple models."""
-        handler = CoderLlmUsageCallbackHandler()
+        handler = AgentLlmUsageCallbackHandler()
         
         message1 = AIMessage(
             content="response 1",
@@ -173,7 +173,7 @@ class TestUsageCallback:
 
     def test_coder_llm_usage_callback_handler_no_usage_metadata(self):
         """Test on_llm_end with no usage metadata."""
-        handler = CoderLlmUsageCallbackHandler()
+        handler = AgentLlmUsageCallbackHandler()
         
         message = AIMessage(
             content="test response",
@@ -191,7 +191,7 @@ class TestUsageCallback:
         """Test on_llm_end with non-ChatGeneration."""
         from langchain_core.outputs import Generation
         
-        handler = CoderLlmUsageCallbackHandler()
+        handler = AgentLlmUsageCallbackHandler()
         
         generation = Generation(text="test response")
         result = LLMResult(generations=[[generation]])

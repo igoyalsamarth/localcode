@@ -10,9 +10,8 @@ from services.github.repository_bootstrap import (
     upsert_repository_from_github,
     ensure_default_coder_repository_agent,
     ensure_default_review_repository_agent,
-    CODER_MODE_AUTO,
-    REVIEW_MODE_TAG,
 )
+from services.github.trigger_modes import TRIGGER_MODE_AUTO, TRIGGER_MODE_TAG
 from model.tables import (
     User,
     Organization,
@@ -276,7 +275,7 @@ class TestRepositoryBootstrap:
         
         assert repo_agent is not None
         assert repo_agent.enabled is True
-        assert repo_agent.config_json == {"mode": CODER_MODE_AUTO}
+        assert repo_agent.config_json == {"mode": TRIGGER_MODE_AUTO}
         assert repo_agent.agent.type == AgentType.code
 
     def test_ensure_default_coder_repository_agent_skips_existing(self, db_session):
@@ -365,7 +364,7 @@ class TestRepositoryBootstrap:
         
         assert repo_agent is not None
         assert repo_agent.enabled is True
-        assert repo_agent.config_json == {"mode": REVIEW_MODE_TAG}
+        assert repo_agent.config_json == {"mode": TRIGGER_MODE_TAG}
         assert repo_agent.agent.type == AgentType.review
 
     def test_ensure_default_review_repository_agent_skips_existing(self, db_session):
@@ -427,5 +426,5 @@ class TestRepositoryBootstrap:
 
     def test_constants_values(self):
         """Test that constants have expected values."""
-        assert CODER_MODE_AUTO == "auto"
-        assert REVIEW_MODE_TAG == "tag"
+        assert TRIGGER_MODE_AUTO == "auto"
+        assert TRIGGER_MODE_TAG == "tag"

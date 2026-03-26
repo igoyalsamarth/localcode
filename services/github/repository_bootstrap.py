@@ -1,7 +1,8 @@
 """
-Create or update ``Repository`` rows from GitHub payloads and ensure default coder config.
+Create or update ``Repository`` rows from GitHub payloads and ensure default agent links.
 
-Default: coder agent enabled with ``mode: auto`` when a repository is first linked.
+Bootstraps ``RepositoryAgent`` rows for issue (``code``) and PR (``review``) workflows when
+a repository is first linked.
 """
 
 from __future__ import annotations
@@ -14,9 +15,12 @@ from sqlalchemy.orm import Session
 
 from model.enums import AgentType
 from model.tables import Agent, Model, Repository, RepositoryAgent
+from services.github.trigger_modes import TRIGGER_MODE_AUTO, TRIGGER_MODE_TAG
 
-CODER_MODE_AUTO = "auto"
-REVIEW_MODE_TAG = "tag"
+_AGENT_DEFAULT_DISPLAY_NAMES: dict[AgentType, str] = {
+    AgentType.code: "Code Agent",
+    AgentType.review: "Review Agent",
+}
 
 
 def get_or_create_default_model(session: Session) -> Model:
@@ -28,38 +32,36 @@ def get_or_create_default_model(session: Session) -> Model:
     return m
 
 
-def get_or_create_coder_agent(session: Session, organization_id: UUID) -> Agent:
+def get_or_create_agent(
+    session: Session, organization_id: UUID, agent_type: AgentType
+) -> Agent:
+    """Return the org's agent row for ``agent_type``, creating it with a default name if missing."""
     stmt = select(Agent).where(
         Agent.organization_id == organization_id,
-        Agent.type == AgentType.code,
+        Agent.type == agent_type,
     )
     agent = session.execute(stmt).scalar_one_or_none()
     if not agent:
+        default_name = _AGENT_DEFAULT_DISPLAY_NAMES.get(
+            agent_type,
+            f"{agent_type.value.title()} Agent",
+        )
         agent = Agent(
             organization_id=organization_id,
-            name="Code Agent",
-            type=AgentType.code,
+            name=default_name,
+            type=agent_type,
         )
         session.add(agent)
         session.flush()
     return agent
+
+
+def get_or_create_coder_agent(session: Session, organization_id: UUID) -> Agent:
+    return get_or_create_agent(session, organization_id, AgentType.code)
 
 
 def get_or_create_review_agent(session: Session, organization_id: UUID) -> Agent:
-    stmt = select(Agent).where(
-        Agent.organization_id == organization_id,
-        Agent.type == AgentType.review,
-    )
-    agent = session.execute(stmt).scalar_one_or_none()
-    if not agent:
-        agent = Agent(
-            organization_id=organization_id,
-            name="Review Agent",
-            type=AgentType.review,
-        )
-        session.add(agent)
-        session.flush()
-    return agent
+    return get_or_create_agent(session, organization_id, AgentType.review)
 
 
 def upsert_repository_from_github(
@@ -114,12 +116,14 @@ def upsert_repository_from_github(
     return new_repo
 
 
-def ensure_default_coder_repository_agent(session: Session, repository: Repository) -> None:
-    """
-    If there is no ``RepositoryAgent`` row for the org's code agent, create one:
-    ``enabled=True``, ``config_json`` ``{\"mode\": \"auto\"}``.
-    """
-    agent = get_or_create_coder_agent(session, repository.organization_id)
+def _ensure_repository_agent_link(
+    session: Session,
+    repository: Repository,
+    *,
+    agent_type: AgentType,
+    default_mode: str,
+) -> None:
+    agent = get_or_create_agent(session, repository.organization_id, agent_type)
     stmt = select(RepositoryAgent).where(
         RepositoryAgent.repository_id == repository.id,
         RepositoryAgent.agent_id == agent.id,
@@ -134,31 +138,32 @@ def ensure_default_coder_repository_agent(session: Session, repository: Reposito
             agent_id=agent.id,
             model_id=model.id,
             enabled=True,
-            config_json={"mode": CODER_MODE_AUTO},
+            config_json={"mode": default_mode},
         )
+    )
+
+
+def ensure_default_coder_repository_agent(session: Session, repository: Repository) -> None:
+    """
+    If there is no ``RepositoryAgent`` row for the org's code agent, create one:
+    ``enabled=True``, ``config_json`` ``{\"mode\": \"auto\"}`` (``TRIGGER_MODE_AUTO``).
+    """
+    _ensure_repository_agent_link(
+        session,
+        repository,
+        agent_type=AgentType.code,
+        default_mode=TRIGGER_MODE_AUTO,
     )
 
 
 def ensure_default_review_repository_agent(session: Session, repository: Repository) -> None:
     """
     If there is no ``RepositoryAgent`` row for the org's review agent, create one:
-    ``enabled=True``, ``config_json`` ``{\"mode\": \"tag\"}`` (default is tag-based, unlike coder).
+    ``enabled=True``, ``config_json`` ``{\"mode\": \"tag\"}`` (``TRIGGER_MODE_TAG``).
     """
-    agent = get_or_create_review_agent(session, repository.organization_id)
-    stmt = select(RepositoryAgent).where(
-        RepositoryAgent.repository_id == repository.id,
-        RepositoryAgent.agent_id == agent.id,
-    )
-    if session.execute(stmt).scalar_one_or_none():
-        return
-
-    model = get_or_create_default_model(session)
-    session.add(
-        RepositoryAgent(
-            repository_id=repository.id,
-            agent_id=agent.id,
-            model_id=model.id,
-            enabled=True,
-            config_json={"mode": REVIEW_MODE_TAG},
-        )
+    _ensure_repository_agent_link(
+        session,
+        repository,
+        agent_type=AgentType.review,
+        default_mode=TRIGGER_MODE_TAG,
     )

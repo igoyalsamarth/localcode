@@ -1,8 +1,8 @@
-"""Tests for coder label constants."""
+"""Tests for Greagent GitHub label constants."""
 
 import pytest
 
-from services.github.coder_labels import (
+from services.github.greagent_labels import (
     CODE,
     IN_PROGRESS,
     DONE,
@@ -13,8 +13,8 @@ from services.github.coder_labels import (
 
 
 @pytest.mark.unit
-class TestCoderLabels:
-    """Test coder label constants."""
+class TestGreagentLabels:
+    """Test Greagent label constants."""
 
     def test_code_label(self):
         """Test CODE label constant."""

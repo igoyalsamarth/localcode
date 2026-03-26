@@ -13,7 +13,7 @@ from db.client import (
 
 
 def register_models() -> None:
-    """Import all ORM models so Base.metadata includes them for create_all/migrations."""
+    """Import all ORM models so Base.metadata includes them for create_all."""
     import model.tables  # noqa: F401
 
 

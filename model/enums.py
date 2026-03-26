@@ -15,30 +15,11 @@ class AgentType(StrEnum):
     security = "security"
 
 
-class ReviewStatus(StrEnum):
-    queued = "queued"
-    running = "running"
-    done = "done"
-    failed = "failed"
+class GitHubWorkflowKind(StrEnum):
+    """Which GitHub deep-agent workflow produced a token-usage row (issues vs PRs)."""
 
-
-class TriggeredBy(StrEnum):
-    user = "user"
-    webhook = "webhook"
-    tag = "tag"
-
-
-class ReviewFileStatus(StrEnum):
-    pending = "pending"
-    processing = "processing"
-    done = "done"
-    failed = "failed"
-
-
-class CommentSeverity(StrEnum):
-    info = "info"
-    warning = "warning"
-    error = "error"
+    code = "code"
+    review = "review"
 
 
 class SubscriptionStatus(StrEnum):

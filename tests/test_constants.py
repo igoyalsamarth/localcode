@@ -5,16 +5,16 @@ import pytest
 from unittest.mock import patch
 
 from constants import (
-    get_coder_model_name,
+    AGENT_LLM_PROVIDER,
+    OLLAMA_BASE_URL,
+    daytona_sandbox_enabled,
+    daytona_sandbox_home,
+    get_agent_model_name,
     get_database_url,
-    daytona_coder_enabled,
-    daytona_coder_home,
     git_identity_from_env,
     get_rabbitmq_url,
     get_log_level,
     get_sql_echo,
-    CODER_LLM_PROVIDER,
-    OLLAMA_BASE_URL,
 )
 
 
@@ -22,16 +22,16 @@ from constants import (
 class TestConstants:
     """Test configuration constants."""
 
-    def test_get_coder_model_name_default(self):
-        """Test default coder model name."""
+    def test_get_agent_model_name_default(self):
+        """Test default agent model name."""
         with patch.dict(os.environ, {}, clear=True):
-            model = get_coder_model_name()
+            model = get_agent_model_name()
             assert model == "kimi-k2.5:cloud"
 
-    def test_get_coder_model_name_custom(self):
-        """Test custom coder model name from env."""
+    def test_get_agent_model_name_custom(self):
+        """Test custom model name from env."""
         with patch.dict(os.environ, {"MODEL": "custom-model"}, clear=True):
-            model = get_coder_model_name()
+            model = get_agent_model_name()
             assert model == "custom-model"
 
     def test_get_database_url_missing(self):
@@ -47,36 +47,55 @@ class TestConstants:
             url = get_database_url()
             assert url == test_url
 
-    def test_daytona_coder_enabled_no_key(self):
-        """Test Daytona coder disabled when no API key."""
+    def test_daytona_sandbox_enabled_no_key(self):
+        """Test Daytona disabled when no API key."""
         with patch.dict(os.environ, {}, clear=True):
-            assert daytona_coder_enabled() is False
+            assert daytona_sandbox_enabled() is False
 
-    def test_daytona_coder_enabled_with_key(self):
-        """Test Daytona coder enabled with API key."""
+    def test_daytona_sandbox_enabled_with_key(self):
+        """Test Daytona enabled with API key."""
         with patch.dict(os.environ, {"DAYTONA_API_KEY": "test_key"}, clear=True):
-            assert daytona_coder_enabled() is True
+            assert daytona_sandbox_enabled() is True
 
-    def test_daytona_coder_enabled_explicitly_disabled(self):
-        """Test Daytona coder explicitly disabled."""
+    def test_daytona_sandbox_enabled_explicitly_disabled(self):
+        """Test Daytona explicitly disabled via legacy env."""
         with patch.dict(
             os.environ,
             {"DAYTONA_API_KEY": "test_key", "DAYTONA_CODER_ENABLED": "false"},
             clear=True,
         ):
-            assert daytona_coder_enabled() is False
+            assert daytona_sandbox_enabled() is False
 
-    def test_daytona_coder_home_default(self):
+    def test_daytona_sandbox_enabled_agent_flag_disabled(self):
+        with patch.dict(
+            os.environ,
+            {"DAYTONA_API_KEY": "test_key", "DAYTONA_AGENT_ENABLED": "false"},
+            clear=True,
+        ):
+            assert daytona_sandbox_enabled() is False
+
+    def test_daytona_sandbox_home_default(self):
         """Test default Daytona home."""
         with patch.dict(os.environ, {}, clear=True):
-            home = daytona_coder_home()
+            home = daytona_sandbox_home()
             assert home == "/home/daytona"
 
-    def test_daytona_coder_home_custom(self):
-        """Test custom Daytona home."""
+    def test_daytona_sandbox_home_custom_legacy(self):
+        """Test custom Daytona home via legacy env."""
         with patch.dict(os.environ, {"DAYTONA_CODER_HOME": "/custom/home"}, clear=True):
-            home = daytona_coder_home()
+            home = daytona_sandbox_home()
             assert home == "/custom/home"
+
+    def test_daytona_sandbox_home_agent_env_preferred(self):
+        with patch.dict(
+            os.environ,
+            {
+                "DAYTONA_CODER_HOME": "/legacy",
+                "DAYTONA_AGENT_HOME": "/agent",
+            },
+            clear=True,
+        ):
+            assert daytona_sandbox_home() == "/agent"
 
     def test_git_identity_from_env_not_set(self):
         """Test git identity returns None when not set."""
@@ -145,9 +164,9 @@ class TestConstants:
             echo = get_sql_echo()
             assert echo is True
 
-    def test_coder_llm_provider(self):
-        """Test coder LLM provider constant."""
-        assert isinstance(CODER_LLM_PROVIDER, str)
+    def test_agent_llm_provider(self):
+        """Test agent LLM provider constant."""
+        assert isinstance(AGENT_LLM_PROVIDER, str)
 
     def test_ollama_base_url(self):
         """Test Ollama base URL constant."""
@@ -157,71 +176,71 @@ class TestConstants:
     def test_github_rest_api_version(self):
         """Test GitHub REST API version constant."""
         from constants import GITHUB_REST_API_VERSION
-        
+
         assert isinstance(GITHUB_REST_API_VERSION, str)
         assert len(GITHUB_REST_API_VERSION) > 0
 
     def test_github_client_id_constant(self):
         """Test GitHub client ID constant exists."""
         from constants import GITHUB_CLIENT_ID
-        
+
         assert isinstance(GITHUB_CLIENT_ID, str)
 
     def test_github_redirect_uri_constant(self):
         """Test GitHub redirect URI constant exists."""
         from constants import GITHUB_REDIRECT_URI
-        
+
         assert isinstance(GITHUB_REDIRECT_URI, str)
         assert "callback" in GITHUB_REDIRECT_URI.lower()
 
     def test_client_url_constant(self):
         """Test client URL constant exists."""
         from constants import CLIENT_URL
-        
+
         assert isinstance(CLIENT_URL, str)
         assert CLIENT_URL.startswith("http")
 
     def test_github_webhook_secret_constant(self):
         """Test GitHub webhook secret constant exists."""
         from constants import GITHUB_WEBHOOK_SECRET
-        
+
         assert isinstance(GITHUB_WEBHOOK_SECRET, str)
 
     def test_daytona_install_gh_cli_constant(self):
         """Test Daytona install GH CLI constant."""
         from constants import DAYTONA_INSTALL_GH_CLI
-        
+
         assert isinstance(DAYTONA_INSTALL_GH_CLI, str)
 
     def test_github_cli_version_constant(self):
         """Test GitHub CLI version constant."""
         from constants import GITHUB_CLI_VERSION
-        
+
         assert isinstance(GITHUB_CLI_VERSION, str)
         assert len(GITHUB_CLI_VERSION) > 0
 
     def test_git_author_name_constant(self):
         """Test GIT_AUTHOR_NAME constant exists."""
         from constants import GIT_AUTHOR_NAME
-        
+
         assert isinstance(GIT_AUTHOR_NAME, str)
 
     def test_git_author_email_constant(self):
         """Test GIT_AUTHOR_EMAIL constant exists."""
         from constants import GIT_AUTHOR_EMAIL
-        
+
         assert isinstance(GIT_AUTHOR_EMAIL, str)
 
     def test_git_committer_name_constant(self):
         """Test GIT_COMMITTER_NAME constant exists."""
         from constants import GIT_COMMITTER_NAME
-        
+
         assert isinstance(GIT_COMMITTER_NAME, str)
 
     def test_git_committer_email_constant(self):
         """Test GIT_COMMITTER_EMAIL constant exists."""
         from constants import GIT_COMMITTER_EMAIL
-        
+
         assert isinstance(GIT_COMMITTER_EMAIL, str)
 
     def test_github_app_constants_exist(self):
@@ -233,7 +252,7 @@ class TestConstants:
             GITHUB_APP_SLUG,
             GITHUB_APP_PRIVATE_KEY,
         )
-        
+
         assert isinstance(GITHUB_APP_CLIENT_ID, str)
         assert isinstance(GITHUB_APP_CLIENT_SECRET, str)
         assert isinstance(GITHUB_APP_ID, str)

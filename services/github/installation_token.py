@@ -210,7 +210,7 @@ def get_installation_token_for_repo(
     github_installation_id: int | None = None,
 ) -> str:
     """
-    Mint an installation token for agent workflows (coder, reviewer, etc.).
+    Mint an installation token for GitHub deep-agent workflows (issues, PRs, labels API).
 
     Prefer ``github_installation_id`` from the webhook payload (``installation.id``).
     That value is authoritative; the DB can be stale after reinstall or migration.
@@ -226,14 +226,13 @@ def get_installation_token_for_repo(
     return get_api_token_for_repo(owner, repo_name)
 
 
-def github_bot_git_identity(_access_token: str | None = None) -> tuple[str, str] | None:
+def github_bot_git_identity() -> tuple[str, str] | None:
     """
     Return ``(login, noreply_email)`` for this GitHub App's bot user.
 
     **Installation access tokens cannot use** ``GET /user`` (GitHub returns 403). We resolve
     identity via JWT ``GET /app`` (or ``GITHUB_APP_SLUG``) and public ``GET /users/{slug}[bot]``.
     """
-    del _access_token  # kept for call-site compatibility; not used
     if not app_credentials_configured():
         return None
     try:

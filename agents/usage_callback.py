@@ -1,5 +1,5 @@
 """
-LLM usage aggregation for the GitHub coder agent.
+LLM usage aggregation for GitHub deep agents (issue + PR workflows).
 
 Extends LangChain's ``UsageMetadataCallbackHandler`` so Ollama / cloud models are
 counted even when ``response_metadata`` uses ``model`` instead of ``model_name``.
@@ -24,7 +24,7 @@ def _model_label_from_message(message: AIMessage) -> str:
     )
 
 
-class CoderLlmUsageCallbackHandler(UsageMetadataCallbackHandler):
+class AgentLlmUsageCallbackHandler(UsageMetadataCallbackHandler):
     """Accumulates per-model token usage across all LLM calls (including subagents)."""
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:

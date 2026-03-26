@@ -23,12 +23,9 @@ from db.client import Base
 from model.enums import (
     AgentType,
     BillingCycle,
-    CommentSeverity,
+    GitHubWorkflowKind,
     MemberRole,
-    ReviewFileStatus,
-    ReviewStatus,
     SubscriptionStatus,
-    TriggeredBy,
 )
 
 
@@ -96,9 +93,6 @@ class Organization(Base):
         "Repository", back_populates="organization"
     )
     agents: Mapped[list["Agent"]] = relationship("Agent", back_populates="organization")
-    model_keys: Mapped[list["OrganizationModelKey"]] = relationship(
-        "OrganizationModelKey", back_populates="organization"
-    )
     subscriptions: Mapped[list["Subscription"]] = relationship(
         "Subscription", back_populates="organization"
     )
@@ -207,12 +201,6 @@ class Repository(Base):
     repository_agents: Mapped[list["RepositoryAgent"]] = relationship(
         "RepositoryAgent", back_populates="repository"
     )
-    pull_requests: Mapped[list["PullRequest"]] = relationship(
-        "PullRequest", back_populates="repository"
-    )
-    review_runs: Mapped[list["ReviewRun"]] = relationship(
-        "ReviewRun", back_populates="repository"
-    )
 
     __table_args__ = (
         Index("ix_repositories_org_github_repo", "organization_id", "github_repo_id", unique=True),
@@ -242,14 +230,8 @@ class Model(Base):
     repository_agents: Mapped[list["RepositoryAgent"]] = relationship(
         "RepositoryAgent", back_populates="model"
     )
-    review_runs: Mapped[list["ReviewRun"]] = relationship(
-        "ReviewRun", back_populates="model"
-    )
-    token_usage: Mapped[list["TokenUsage"]] = relationship(
-        "TokenUsage", back_populates="model"
-    )
-    coder_workflow_usage: Mapped[list["CoderWorkflowUsage"]] = relationship(
-        "CoderWorkflowUsage", back_populates="model"
+    agent_workflow_usage: Mapped[list["AgentWorkflowUsage"]] = relationship(
+        "AgentWorkflowUsage", back_populates="model"
     )
 
 
@@ -276,12 +258,6 @@ class Agent(Base):
     )
     repository_agents: Mapped[list["RepositoryAgent"]] = relationship(
         "RepositoryAgent", back_populates="agent"
-    )
-    review_runs: Mapped[list["ReviewRun"]] = relationship(
-        "ReviewRun", back_populates="agent"
-    )
-    subscription_agents: Mapped[list["SubscriptionAgent"]] = relationship(
-        "SubscriptionAgent", back_populates="agent"
     )
 
 
@@ -319,229 +295,31 @@ class RepositoryAgent(Base):
     model: Mapped["Model"] = relationship("Model", back_populates="repository_agents")
 
 
-class OrganizationModelKey(Base):
-    __tablename__ = "organization_model_keys"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4_default,
-    )
-    organization_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("organizations.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    provider: Mapped[str] = mapped_column(String(64), nullable=False)
-    encrypted_api_key: Mapped[str] = mapped_column(Text, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    organization: Mapped["Organization"] = relationship(
-        "Organization", back_populates="model_keys"
-    )
-
-    __table_args__ = (
-        Index("ix_org_model_keys_org_provider", "organization_id", "provider", unique=True),
-    )
-
-
 # ---------------------------------------------------------------------------
-# Pull Requests & Reviews
+# GitHub deep-agent usage (billing / analytics)
 # ---------------------------------------------------------------------------
 
 
-class PullRequest(Base):
-    __tablename__ = "pull_requests"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4_default,
-    )
-    repository_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("repositories.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    github_pr_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    number: Mapped[int] = mapped_column(Integer, nullable=False)
-    title: Mapped[str] = mapped_column(String(512), nullable=False)
-    author: Mapped[str] = mapped_column(String(255), nullable=False)
-    base_branch: Mapped[str] = mapped_column(String(255), nullable=False)
-    head_branch: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    repository: Mapped["Repository"] = relationship(
-        "Repository", back_populates="pull_requests"
-    )
-    review_runs: Mapped[list["ReviewRun"]] = relationship(
-        "ReviewRun", back_populates="pull_request"
-    )
-
-
-class ReviewRun(Base):
-    __tablename__ = "review_runs"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4_default,
-    )
-    pull_request_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("pull_requests.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    agent_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("agents.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    repository_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("repositories.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    status: Mapped[ReviewStatus] = mapped_column(
-        Enum(ReviewStatus),
-        nullable=False,
-        default=ReviewStatus.queued,
-    )
-    triggered_by: Mapped[TriggeredBy] = mapped_column(
-        Enum(TriggeredBy),
-        nullable=False,
-    )
-    model_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("models.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    pull_request: Mapped["PullRequest"] = relationship(
-        "PullRequest", back_populates="review_runs"
-    )
-    agent: Mapped["Agent"] = relationship("Agent", back_populates="review_runs")
-    repository: Mapped["Repository"] = relationship(
-        "Repository", back_populates="review_runs"
-    )
-    model: Mapped["Model"] = relationship("Model", back_populates="review_runs")
-    review_files: Mapped[list["ReviewFile"]] = relationship(
-        "ReviewFile", back_populates="review_run"
-    )
-    review_comments: Mapped[list["ReviewComment"]] = relationship(
-        "ReviewComment", back_populates="review_run"
-    )
-    token_usage: Mapped[list["TokenUsage"]] = relationship(
-        "TokenUsage", back_populates="review_run"
-    )
-
-
-class ReviewFile(Base):
-    __tablename__ = "review_files"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4_default,
-    )
-    review_run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("review_runs.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
-    additions: Mapped[int] = mapped_column(Integer, default=0)
-    deletions: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[ReviewFileStatus] = mapped_column(
-        Enum(ReviewFileStatus),
-        nullable=False,
-        default=ReviewFileStatus.pending,
-    )
-
-    review_run: Mapped["ReviewRun"] = relationship(
-        "ReviewRun", back_populates="review_files"
-    )
-
-
-class ReviewComment(Base):
-    __tablename__ = "review_comments"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4_default,
-    )
-    review_run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("review_runs.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
-    line_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    comment: Mapped[str] = mapped_column(Text, nullable=False)
-    severity: Mapped[CommentSeverity] = mapped_column(
-        Enum(CommentSeverity),
-        nullable=False,
-        default=CommentSeverity.info,
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    review_run: Mapped["ReviewRun"] = relationship(
-        "ReviewRun", back_populates="review_comments"
-    )
-
-
-class TokenUsage(Base):
-    __tablename__ = "token_usage"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4_default,
-    )
-    review_run_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("review_runs.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    organization_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("organizations.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    model_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("models.id", ondelete="RESTRICT"),
-        nullable=False,
-    )
-    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
-    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
-    cost: Mapped[Decimal] = mapped_column(Numeric(18, 8), default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    review_run: Mapped["ReviewRun"] = relationship(
-        "ReviewRun", back_populates="token_usage"
-    )
-    model: Mapped["Model"] = relationship("Model", back_populates="token_usage")
-
-
-class CoderWorkflowUsage(Base):
+class AgentWorkflowUsage(Base):
     """
-    Token usage for one GitHub coder agent run (issue labelled ``greagent:code``).
+    Token usage for one GitHub deep-agent run (issue coding or PR review).
 
-    Separate from ``TokenUsage`` (which is tied to PR review runs) so billing can
-    track coder workflows independently.
+    ``workflow`` distinguishes rows for the frontend and analytics. ``github_item_number``
+    is the GitHub issue number when ``workflow`` is ``code``, or the PR number when it is
+    ``review``.
     """
 
-    __tablename__ = "coder_workflow_usage"
+    __tablename__ = "agent_workflow_usage"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid4_default,
+    )
+    workflow: Mapped[GitHubWorkflowKind] = mapped_column(
+        Enum(GitHubWorkflowKind, native_enum=False, length=16),
+        nullable=False,
+        index=True,
     )
     organization_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
@@ -556,7 +334,7 @@ class CoderWorkflowUsage(Base):
         index=True,
     )
     github_full_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
-    issue_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    github_item_number: Mapped[int] = mapped_column(Integer, nullable=False)
     langgraph_thread_id: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String(64), nullable=False, default="ollama")
     model_name: Mapped[str] = mapped_column(
@@ -580,7 +358,7 @@ class CoderWorkflowUsage(Base):
 
     organization: Mapped["Organization | None"] = relationship()
     repository: Mapped["Repository | None"] = relationship()
-    model: Mapped["Model | None"] = relationship("Model", back_populates="coder_workflow_usage")
+    model: Mapped["Model | None"] = relationship("Model", back_populates="agent_workflow_usage")
 
 
 # ---------------------------------------------------------------------------
@@ -614,58 +392,3 @@ class Subscription(Base):
     organization: Mapped["Organization"] = relationship(
         "Organization", back_populates="subscriptions"
     )
-    subscription_agents: Mapped[list["SubscriptionAgent"]] = relationship(
-        "SubscriptionAgent", back_populates="subscription"
-    )
-
-
-class SubscriptionAgent(Base):
-    __tablename__ = "subscription_agents"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4_default,
-    )
-    subscription_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("subscriptions.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    agent_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("agents.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    subscription: Mapped["Subscription"] = relationship(
-        "Subscription", back_populates="subscription_agents"
-    )
-    agent: Mapped["Agent"] = relationship("Agent", back_populates="subscription_agents")
-
-
-# ---------------------------------------------------------------------------
-# Events
-# ---------------------------------------------------------------------------
-
-
-class GitHubEvent(Base):
-    __tablename__ = "github_events"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4_default,
-    )
-    installation_id: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        index=True,
-    )
-    event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    payload_json: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    processed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

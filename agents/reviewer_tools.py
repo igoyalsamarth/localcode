@@ -1,7 +1,7 @@
 """
-LangChain tools for the GitHub reviewer agent.
+LangChain tools for the GitHub PR review deep agent.
 
-These tools allow the agent to create inline review comments on specific lines of code.
+Inline review comments use PR context from ``GITHUB_PR_*`` environment variables.
 """
 
 from __future__ import annotations
@@ -65,23 +65,22 @@ def add_inline_review_comment(
                 body="Good catch removing this deprecated function!"
             )
     """
-    # Get PR context from environment variables set by the reviewer
-    owner = os.environ.get("REVIEW_OWNER")
-    repo = os.environ.get("REVIEW_REPO")
-    pr_number = os.environ.get("REVIEW_PR_NUMBER")
-    commit_id = os.environ.get("REVIEW_HEAD_SHA")
+    owner = os.environ.get("GITHUB_PR_OWNER")
+    repo = os.environ.get("GITHUB_PR_REPO")
+    pr_number = os.environ.get("GITHUB_PR_NUMBER")
+    commit_id = os.environ.get("GITHUB_PR_HEAD_SHA")
     token = os.environ.get("GH_TOKEN")
 
     if not all([owner, repo, pr_number, commit_id, token]):
         missing = []
         if not owner:
-            missing.append("REVIEW_OWNER")
+            missing.append("GITHUB_PR_OWNER")
         if not repo:
-            missing.append("REVIEW_REPO")
+            missing.append("GITHUB_PR_REPO")
         if not pr_number:
-            missing.append("REVIEW_PR_NUMBER")
+            missing.append("GITHUB_PR_NUMBER")
         if not commit_id:
-            missing.append("REVIEW_HEAD_SHA")
+            missing.append("GITHUB_PR_HEAD_SHA")
         if not token:
             missing.append("GH_TOKEN")
         return f"Error: Missing required environment variables: {', '.join(missing)}"
