@@ -28,7 +28,7 @@ def get_database_url() -> str:
     return url
 
 
-# GitHub OAuth configuration (for user authentication)
+# GitHub OAuth (identity only: profile + email). Repo/org access is via the GitHub App.
 GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")
 GITHUB_CLIENT_SECRET = os.environ.get("GITHUB_CLIENT_SECRET", "")
 GITHUB_REDIRECT_URI = os.environ.get(
@@ -43,6 +43,10 @@ GITHUB_APP_SLUG = os.environ.get("GITHUB_APP_SLUG", "")
 GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY", "")
 
 CLIENT_URL = os.environ.get("CLIENT_URL", "http://localhost:3000")
+
+# Session JWT (issued after GitHub OAuth user login; used as API Bearer token)
+JWT_SECRET = os.environ.get("JWT_SECRET", "").strip()
+JWT_EXPIRE_DAYS = int(os.environ.get("JWT_EXPIRE_DAYS", "7"))
 
 # GitHub Webhook configuration
 GITHUB_WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")

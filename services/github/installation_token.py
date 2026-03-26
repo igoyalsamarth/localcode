@@ -226,14 +226,13 @@ def get_installation_token_for_repo(
     return get_api_token_for_repo(owner, repo_name)
 
 
-def github_bot_git_identity(_access_token: str | None = None) -> tuple[str, str] | None:
+def github_bot_git_identity() -> tuple[str, str] | None:
     """
     Return ``(login, noreply_email)`` for this GitHub App's bot user.
 
     **Installation access tokens cannot use** ``GET /user`` (GitHub returns 403). We resolve
     identity via JWT ``GET /app`` (or ``GITHUB_APP_SLUG``) and public ``GET /users/{slug}[bot]``.
     """
-    del _access_token  # kept for call-site compatibility; not used
     if not app_credentials_configured():
         return None
     try:

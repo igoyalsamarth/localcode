@@ -13,10 +13,11 @@ from constants import (
     CLIENT_URL,
     GITHUB_REST_API_VERSION,
 )
+from api.jwt_session import create_session_token
 from db import session_scope
 from services import create_or_update_user, get_or_create_organization
 from logger import get_logger
-from urllib.parse import urlencode, urljoin
+from urllib.parse import urlencode
 
 logger = get_logger(__name__)
 
@@ -26,9 +27,10 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 @router.get("/login")
 async def github_login(redirect_to: Optional[str] = Query(None)):
     """
-    Initiate GitHub OAuth flow.
+    Initiate GitHub OAuth for **identity only** (profile + email).
 
-    Redirects user to GitHub authorization page.
+    Repository and organization access are granted separately when the user installs
+    the GitHub App, not via this OAuth client.
 
     Args:
         redirect_to: Optional URL to redirect to after successful authentication
@@ -36,7 +38,8 @@ async def github_login(redirect_to: Optional[str] = Query(None)):
     if not GITHUB_CLIENT_ID:
         raise HTTPException(status_code=500, detail="GITHUB_CLIENT_ID not configured")
 
-    scope = "repo,user:email,read:org"
+    # No repo / read:org — those permissions belong to the GitHub App installation.
+    scope = "read:user user:email"
 
     state = redirect_to if redirect_to else ""
 
@@ -159,19 +162,22 @@ async def github_callback(code: str = Query(...), state: Optional[str] = Query(N
                 f"User synced to database: {user.id}, Organization: {organization.id}"
             )
 
-        # TODO: Create JWT token for session management
-        # For now, pass user data as query parameters (consider using JWT in production)
+        try:
+            session_jwt = create_session_token(
+                user_id=user.id,
+                org_id=organization.id,
+                github_login=github_login,
+            )
+        except RuntimeError as e:
+            logger.error("Cannot issue session JWT: %s", e)
+            raise HTTPException(
+                status_code=500,
+                detail="JWT_SECRET is not configured on the server",
+            ) from e
 
         redirect_url = state if state else f"{CLIENT_URL}/auth/callback"
 
-        # Append user and org info to redirect URL
-        params = {
-            "user_id": str(user.id),
-            "github_login": github_login,
-            "org_id": str(organization.id),
-            "org_name": organization.name,
-            "access_token": access_token,
-        }
+        params = {"token": session_jwt}
 
         redirect_url_with_params = f"{redirect_url}?{urlencode(params)}"
 
@@ -187,10 +193,6 @@ async def github_callback(code: str = Query(...), state: Optional[str] = Query(N
 
 @router.get("/logout")
 async def logout():
-    """
-    Logout endpoint.
-
-    TODO: Implement session/token invalidation
-    """
+    """Logout: clients clear the stored JWT; tokens are not server-invalidated."""
     logger.info("User logged out")
     return {"status": "logged_out"}

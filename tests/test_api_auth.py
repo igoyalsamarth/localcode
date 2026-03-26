@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, unquote_plus, urlparse
 
 
 @pytest.mark.unit
@@ -50,12 +50,18 @@ class TestAuthAPIIntegration:
                 assert "redirect_uri=" in location
 
     def test_login_includes_scope(self, client):
-        """Test login redirect includes required scopes."""
+        """OAuth asks only for identity scopes (no repo or org read)."""
         with patch("api.auth.GITHUB_CLIENT_ID", "test_client_id"):
             response = client.get("/auth/login", follow_redirects=False)
-            
+
             location = response.headers.get("location", "")
             assert "scope=" in location
+            q = parse_qs(urlparse(location).query)
+            scope = unquote_plus(q.get("scope", [""])[0])
+            assert "read:user" in scope
+            assert "user:email" in scope
+            assert "repo" not in scope
+            assert "read:org" not in scope
 
     def test_login_with_redirect_to_parameter(self, client):
         """Test login with redirect_to parameter."""

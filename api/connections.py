@@ -1,15 +1,14 @@
 """GitHub connection management routes."""
 
-from typing import Optional
 from uuid import UUID
-import os
 
-import requests
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from constants import GITHUB_APP_SLUG, GITHUB_APP_ID, CLIENT_URL
+from api.deps import get_current_user_id
+from api.user_org import require_user_and_owned_org
+from constants import GITHUB_APP_SLUG
 from db import session_scope
 from model.tables import User, Organization, GitHubInstallation
 from logger import get_logger
@@ -19,38 +18,48 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/connections", tags=["connections"])
 
 
+def _persist_github_installation(
+    session,
+    *,
+    user: User,
+    org: Organization,
+    installation_id: int,
+) -> None:
+    stmt = select(GitHubInstallation).where(
+        GitHubInstallation.github_installation_id == installation_id
+    )
+    installation = session.execute(stmt).scalar_one_or_none()
+
+    if installation:
+        logger.info("Updating existing GitHub installation: %s", installation_id)
+        installation.organization_id = org.id
+    else:
+        logger.info("Creating new GitHub installation: %s", installation_id)
+        installation = GitHubInstallation(
+            organization_id=org.id,
+            github_installation_id=installation_id,
+            account_name=user.github_login or "Unknown",
+        )
+        session.add(installation)
+
+    org.github_installation_id = installation_id
+
+
+class GitHubInstallationCallbackBody(BaseModel):
+    installation_id: int = Field(..., ge=1)
+    setup_action: str | None = None
+
+
 @router.get("/github")
-async def get_github_connection():
+async def get_github_connection(user_id: UUID = Depends(get_current_user_id)):
     """
     Get GitHub App installation status for the authenticated user's organization.
-    
+
     Returns connection details if GitHub App is installed.
-    
-    TODO: Get user_id from JWT token or session
     """
-    # TODO: Get user_id from authenticated session
-    # For now, get the most recent user as a placeholder
-    
     with session_scope() as session:
-        stmt = select(User).order_by(User.created_at.desc()).limit(1)
-        user = session.execute(stmt).scalar_one_or_none()
-        
-        if not user:
-            raise HTTPException(
-                status_code=404,
-                detail="User not found. Please authenticate first."
-            )
-        
-        # Get user's organization
-        stmt = select(Organization).where(Organization.owner_user_id == user.id)
-        org = session.execute(stmt).scalar_one_or_none()
-        
-        if not org:
-            return {
-                "id": str(user.id),
-                "connected": False,
-            }
-        
+        user, org = require_user_and_owned_org(session, user_id)
+
         # Check if organization has GitHub App installation
         stmt = select(GitHubInstallation).where(
             GitHubInstallation.organization_id == org.id
@@ -75,35 +84,15 @@ async def get_github_connection():
 
 
 @router.get("/github/installation")
-async def get_github_installation():
+async def get_github_installation(user_id: UUID = Depends(get_current_user_id)):
     """
     Get GitHub App installation details for the authenticated user's organization.
-    
+
     Returns installation details including repositories and permissions.
-    
-    TODO: Get user_id from JWT token or session
     """
-    # TODO: Get user_id from authenticated session
     with session_scope() as session:
-        stmt = select(User).order_by(User.created_at.desc()).limit(1)
-        user = session.execute(stmt).scalar_one_or_none()
-        
-        if not user:
-            raise HTTPException(
-                status_code=404,
-                detail="User not found. Please authenticate first."
-            )
-        
-        # Get user's organization
-        stmt = select(Organization).where(Organization.owner_user_id == user.id)
-        org = session.execute(stmt).scalar_one_or_none()
-        
-        if not org:
-            return {
-                "id": str(user.id),
-                "installed": False,
-            }
-        
+        user, org = require_user_and_owned_org(session, user_id)
+
         # Check if organization has GitHub App installation
         stmt = select(GitHubInstallation).where(
             GitHubInstallation.organization_id == org.id
@@ -147,171 +136,81 @@ async def get_github_installation():
         }
 
 
-@router.post("/github/install")
-async def install_github_app():
-    """
-    Generate GitHub App installation URL.
-    
-    Returns the URL to redirect user to install the GitHub App.
-    
-    TODO: Get user_id from JWT token or session
-    """
+def _github_app_install_response(user_id: UUID) -> dict:
     if not GITHUB_APP_SLUG:
         raise HTTPException(
             status_code=500,
-            detail="GITHUB_APP_SLUG not configured"
+            detail="GITHUB_APP_SLUG not configured",
         )
-    
-    # TODO: Get user_id from authenticated session
-    with session_scope() as session:
-        stmt = select(User).order_by(User.created_at.desc()).limit(1)
-        user = session.execute(stmt).scalar_one_or_none()
-        
-        if not user:
-            raise HTTPException(
-                status_code=404,
-                detail="User not found. Please authenticate first."
-            )
-        
-        user_id = str(user.id)
-    
-    # State parameter to track which user is installing
-    state = user_id
-    
-    # Generate GitHub App installation URL
+    state = str(user_id)
     installation_url = (
         f"https://github.com/apps/{GITHUB_APP_SLUG}/installations/new"
         f"?state={state}"
     )
-    
-    logger.info(f"Generated GitHub App installation URL for user: {user_id}")
-    
-    return {
-        "installUrl": installation_url,
-    }
+    logger.info("Generated GitHub App installation URL for user: %s", state)
+    return {"installUrl": installation_url}
+
+
+@router.post("/github/install")
+async def install_github_app(user_id: UUID = Depends(get_current_user_id)):
+    """
+    Generate GitHub App installation URL.
+
+    Returns the URL to redirect user to install the GitHub App.
+    """
+    with session_scope() as session:
+        require_user_and_owned_org(session, user_id)
+    return _github_app_install_response(user_id)
 
 
 @router.get("/github/connect")
-async def connect_github():
+async def connect_github(user_id: UUID = Depends(get_current_user_id)):
     """
     Alias for /github/install endpoint (GET method).
-    
+
     Generate GitHub App installation URL.
     """
-    return await install_github_app()
+    with session_scope() as session:
+        require_user_and_owned_org(session, user_id)
+    return _github_app_install_response(user_id)
 
 
-@router.get("/github/callback")
-async def github_app_callback(
-    installation_id: Optional[int] = Query(None),
-    setup_action: Optional[str] = Query(None),
-    state: Optional[str] = Query(None)
+@router.post("/github/installation/callback")
+async def github_installation_callback_api(
+    body: GitHubInstallationCallbackBody,
+    user_id: UUID = Depends(get_current_user_id),
 ):
     """
-    Handle GitHub App installation callback.
-    
-    Called by GitHub after user installs the app.
-    Frontend should redirect here after installation.
-    
-    Args:
-        installation_id: GitHub App installation ID
-        setup_action: Action performed (install, update)
-        state: State parameter containing user_id
+    Complete GitHub App installation (SPA callback).
+
+    Frontend receives ``installation_id`` from GitHub redirect and POSTs here with
+    a Bearer session token.
     """
-    redirect_url = f"{CLIENT_URL}/dashboard/connections"
-    
-    if not installation_id:
-        logger.error("No installation_id provided in callback")
-        return RedirectResponse(url=f"{redirect_url}?status=error&message=No installation ID")
-    
-    # Parse state to get user_id
-    try:
-        user_id = UUID(state) if state else None
-    except (ValueError, AttributeError):
-        logger.error(f"Invalid state parameter: {state}")
-        return RedirectResponse(url=f"{redirect_url}?status=error&message=Invalid state")
-    
-    if not user_id:
-        logger.error("No user_id in state parameter")
-        return RedirectResponse(url=f"{redirect_url}?status=error&message=No user ID")
-    
-    try:
-        with session_scope() as session:
-            # Get user
-            stmt = select(User).where(User.id == user_id)
-            user = session.execute(stmt).scalar_one_or_none()
-            
-            if not user:
-                raise HTTPException(status_code=404, detail="User not found")
-            
-            # Get user's organization
-            stmt = select(Organization).where(Organization.owner_user_id == user.id)
-            org = session.execute(stmt).scalar_one_or_none()
-            
-            if not org:
-                raise HTTPException(status_code=404, detail="Organization not found")
-            
-            # Check if installation already exists
-            stmt = select(GitHubInstallation).where(
-                GitHubInstallation.github_installation_id == installation_id
-            )
-            installation = session.execute(stmt).scalar_one_or_none()
-            
-            if installation:
-                logger.info(f"Updating existing GitHub installation: {installation_id}")
-                installation.organization_id = org.id
-            else:
-                logger.info(f"Creating new GitHub installation: {installation_id}")
-                installation = GitHubInstallation(
-                    organization_id=org.id,
-                    github_installation_id=installation_id,
-                    account_name=user.github_login or "Unknown",
-                )
-                session.add(installation)
-            
-            # Update organization with installation ID
-            org.github_installation_id = installation_id
-            
-            session.commit()
-            
-            logger.info(f"GitHub App installed for org: {org.name}, installation_id: {installation_id}")
-        
-        return RedirectResponse(url=f"{redirect_url}?status=connected")
-        
-    except Exception as e:
-        logger.exception(f"Failed to process GitHub App installation: {e}")
-        return RedirectResponse(url=f"{redirect_url}?status=error&message={str(e)}")
+    with session_scope() as session:
+        user, org = require_user_and_owned_org(session, user_id)
+        _persist_github_installation(
+            session,
+            user=user,
+            org=org,
+            installation_id=body.installation_id,
+        )
+        session.commit()
+        logger.info(
+            "GitHub App installed via API for org: %s, installation_id: %s",
+            org.name,
+            body.installation_id,
+        )
+    return {"status": "connected"}
 
 
 @router.delete("/github")
-async def disconnect_github():
+async def disconnect_github(user_id: UUID = Depends(get_current_user_id)):
     """
     Disconnect GitHub App installation for the authenticated user's organization.
-    
-    TODO: Get user_id from JWT token or session
     """
-    # TODO: Get user_id from authenticated session
-    
     with session_scope() as session:
-        stmt = select(User).order_by(User.created_at.desc()).limit(1)
-        user = session.execute(stmt).scalar_one_or_none()
-        
-        if not user:
-            raise HTTPException(
-                status_code=404,
-                detail="User not found"
-            )
-        
-        # Get user's organization
-        stmt = select(Organization).where(Organization.owner_user_id == user.id)
-        org = session.execute(stmt).scalar_one_or_none()
-        
-        if not org:
-            raise HTTPException(
-                status_code=404,
-                detail="Organization not found"
-            )
-        
+        user, org = require_user_and_owned_org(session, user_id)
+
         # Delete GitHub installation
         stmt = select(GitHubInstallation).where(
             GitHubInstallation.organization_id == org.id

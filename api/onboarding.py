@@ -2,9 +2,10 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
+from api.deps import get_current_user_id
 from db import session_scope
 from model.tables import User, Organization
 from model.schemas import OnboardingRequest
@@ -16,7 +17,10 @@ router = APIRouter(prefix="/onboarding", tags=["onboarding"])
 
 
 @router.post("")
-async def complete_onboarding(data: OnboardingRequest):
+async def complete_onboarding(
+    data: OnboardingRequest,
+    user_id: UUID = Depends(get_current_user_id),
+):
     """
     Complete user onboarding by updating profile information.
     
@@ -44,21 +48,14 @@ async def complete_onboarding(data: OnboardingRequest):
             detail="Bio must be 160 characters or less"
         )
     
-    # TODO: Get user_id from JWT token or session
-    # For now, this is a placeholder - you'll need to implement authentication middleware
-    # that extracts the user_id from the request
-    
-    # This is temporary - in production, get user_id from authenticated session
     with session_scope() as session:
-        # For demo purposes, find the most recently created user
-        # In production, get user_id from JWT/session
-        stmt = select(User).order_by(User.created_at.desc()).limit(1)
+        stmt = select(User).where(User.id == user_id)
         user = session.execute(stmt).scalar_one_or_none()
-        
+
         if not user:
             raise HTTPException(
                 status_code=404,
-                detail="User not found. Please authenticate first."
+                detail="User not found. Please authenticate first.",
             )
         
         # Check if username is already taken

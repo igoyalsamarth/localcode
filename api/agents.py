@@ -4,14 +4,13 @@ from collections import defaultdict
 from decimal import Decimal
 from uuid import UUID
 
-from fastapi import APIRouter, Body, HTTPException, Path, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 from sqlalchemy import String, cast, distinct, func, or_, select
-from sqlalchemy.orm import Session
-
+from api.deps import get_current_user_id
+from api.user_org import require_user_and_owned_org
 from db import session_scope
 from model.tables import (
-    User,
     Organization,
     Repository,
     Agent,
@@ -27,46 +26,6 @@ from services.github.repository_bootstrap import CODER_MODE_AUTO
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/agents", tags=["agents"])
-
-
-def _get_current_user_org(session: Session) -> tuple[User, Organization]:
-    """Resolve the default user and their organization (same pattern as other agent routes)."""
-    stmt = select(User).order_by(User.created_at.desc()).limit(1)
-    user = session.execute(stmt).scalar_one_or_none()
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="User not found. Please authenticate first.",
-        )
-    stmt = select(Organization).where(Organization.owner_user_id == user.id)
-    org = session.execute(stmt).scalar_one_or_none()
-    if not org:
-        raise HTTPException(status_code=404, detail="Organization not found")
-    return user, org
-
-
-def _get_organization_optional(session: Session) -> Organization | None:
-    """Same lookup as ``_get_current_user_org`` but returns None instead of 404."""
-    stmt = select(User).order_by(User.created_at.desc()).limit(1)
-    user = session.execute(stmt).scalar_one_or_none()
-    if not user:
-        return None
-    stmt = select(Organization).where(Organization.owner_user_id == user.id)
-    return session.execute(stmt).scalar_one_or_none()
-
-
-def _empty_coder_usage_response() -> dict:
-    """Payload when no user/org exists yet (e.g. before OAuth) — avoids 404 on the UI."""
-    return {
-        "summary": {
-            "runCount": 0,
-            "totalInputTokens": 0,
-            "totalOutputTokens": 0,
-            "totalTokens": 0,
-            "totalCost": "0",
-        },
-        "repositories": [],
-    }
 
 
 def _org_coder_usage_filter(org_id: UUID, repo_full_names: list[str]):
@@ -92,16 +51,14 @@ class RepositoryConfigUpdate(BaseModel):
 
 
 @router.get("/coder/settings")
-async def get_coder_settings():
+async def get_coder_settings(user_id: UUID = Depends(get_current_user_id)):
     """
     Get repositories and their configurations for the coder agent.
-    
+
     Returns all repositories in the user's organization and their agent configurations.
-    
-    TODO: Get user_id from JWT token or session
     """
     with session_scope() as session:
-        _, org = _get_current_user_org(session)
+        _, org = require_user_and_owned_org(session, user_id)
 
         # Get or create coder agent for this organization
         stmt = select(Agent).where(
@@ -179,7 +136,8 @@ async def get_coder_settings():
 @router.put("/coder/repositories/{repository_id}")
 async def update_repository_config(
     repository_id: int = Path(...),
-    config: RepositoryConfigUpdate = Body(...)
+    config: RepositoryConfigUpdate = Body(...),
+    user_id: UUID = Depends(get_current_user_id),
 ):
     """
     Update repository configuration for the coder agent.
@@ -192,7 +150,7 @@ async def update_repository_config(
         Updated configuration
     """
     with session_scope() as session:
-        _, org = _get_current_user_org(session)
+        _, org = require_user_and_owned_org(session, user_id)
 
         # Get repository
         stmt = select(Repository).where(
@@ -281,6 +239,7 @@ async def update_repository_config(
 
 @router.get("/coder/usage")
 async def get_coder_usage(
+    user_id: UUID = Depends(get_current_user_id),
     repo_limit: int = Query(50, ge=1, le=200, description="Max repositories in response"),
     issue_limit: int = Query(
         100,
@@ -296,9 +255,7 @@ async def get_coder_usage(
     sorted by ``lastRunAt`` descending within that repo.
     """
     with session_scope() as session:
-        org = _get_organization_optional(session)
-        if org is None:
-            return _empty_coder_usage_response()
+        _, org = require_user_and_owned_org(session, user_id)
 
         repos = session.execute(
             select(Repository).where(Repository.organization_id == org.id)
