@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from model.enums import AgentType
 from model.tables import Agent, Model, Repository, RepositoryAgent
-from services.github.trigger_modes import TRIGGER_MODE_AUTO, TRIGGER_MODE_TAG
+from services.github.trigger_modes import TRIGGER_MODE_AUTO
 
 _AGENT_DEFAULT_DISPLAY_NAMES: dict[AgentType, str] = {
     AgentType.code: "Code Agent",
@@ -143,7 +143,9 @@ def _ensure_repository_agent_link(
     )
 
 
-def ensure_default_coder_repository_agent(session: Session, repository: Repository) -> None:
+def ensure_default_coder_repository_agent(
+    session: Session, repository: Repository
+) -> None:
     """
     If there is no ``RepositoryAgent`` row for the org's code agent, create one:
     ``enabled=True``, ``config_json`` ``{\"mode\": \"auto\"}`` (``TRIGGER_MODE_AUTO``).
@@ -156,14 +158,18 @@ def ensure_default_coder_repository_agent(session: Session, repository: Reposito
     )
 
 
-def ensure_default_review_repository_agent(session: Session, repository: Repository) -> None:
+def ensure_default_review_repository_agent(
+    session: Session, repository: Repository
+) -> None:
     """
     If there is no ``RepositoryAgent`` row for the org's review agent, create one:
-    ``enabled=True``, ``config_json`` ``{\"mode\": \"tag\"}`` (``TRIGGER_MODE_TAG``).
+    ``enabled=True``, ``config_json`` ``{\"mode\": \"auto\"}`` (``TRIGGER_MODE_AUTO``),
+    same as the code agent — new PRs are reviewed automatically; ``greagent:review``
+    still triggers (or retriggers) a run when applied.
     """
     _ensure_repository_agent_link(
         session,
         repository,
         agent_type=AgentType.review,
-        default_mode=TRIGGER_MODE_TAG,
+        default_mode=TRIGGER_MODE_AUTO,
     )

@@ -5,10 +5,8 @@ load_dotenv()
 
 
 # LLM billing provider string stored on usage rows (Ollama, OpenAI, etc.)
-AGENT_LLM_PROVIDER = os.environ.get(
-    "AGENT_LLM_PROVIDER",
-    os.environ.get("CODER_LLM_PROVIDER", "ollama"),
-)
+AGENT_LLM_PROVIDER = os.environ.get("AGENT_LLM_PROVIDER", "ollama")
+
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MAX_RETRIES = int(os.environ.get("OLLAMA_MAX_RETRIES", "10"))
 OLLAMA_TIMEOUT_SEC = int(os.environ.get("OLLAMA_TIMEOUT_SEC", "120"))
@@ -70,31 +68,25 @@ GIT_COMMITTER_EMAIL = os.environ.get("GIT_COMMITTER_EMAIL", "").strip()
 def daytona_sandbox_enabled() -> bool:
     """
     Use Daytona remote sandbox when ``DAYTONA_API_KEY`` is set.
-
-    Set ``DAYTONA_AGENT_ENABLED=false`` (or legacy ``DAYTONA_CODER_ENABLED=false``) to
-    force the local ``LocalShellBackend`` even if a key exists.
+    Set ``DAYTONA_AGENT_ENABLED=false`` to force the local ``LocalShellBackend`` even
+    if a key exists.
     """
-    for key in ("DAYTONA_AGENT_ENABLED", "DAYTONA_CODER_ENABLED"):
-        if os.environ.get(key, "").strip().lower() in (
-            "0",
-            "false",
-            "no",
-            "off",
-        ):
-            return False
+    if os.environ.get("DAYTONA_AGENT_ENABLED", "").strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        return False
     return bool(os.environ.get("DAYTONA_API_KEY", "").strip())
 
 
 def daytona_sandbox_home() -> str:
     """
     Default OS home inside the TypeScript Daytona snapshot (used for ``WORKFLOW_REPO_ABS`` / ``PATH``).
-
-    Override via ``DAYTONA_AGENT_HOME`` or legacy ``DAYTONA_CODER_HOME`` if your image differs.
+    Override via ``DAYTONA_AGENT_HOME`` if your image differs.
     """
-    h = (
-        os.environ.get("DAYTONA_AGENT_HOME", "").strip()
-        or os.environ.get("DAYTONA_CODER_HOME", "").strip()
-    )
+    h = os.environ.get("DAYTONA_AGENT_HOME", "").strip()
     return h if h else "/home/daytona"
 
 

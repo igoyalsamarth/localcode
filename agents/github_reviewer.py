@@ -142,9 +142,9 @@ def run_agent_on_pr(
     access_token: str | None = None,
 ) -> None:
     """
-    Run the GitHub review agent for a triggered PR (label already moved to
-    ``greagent:review`` by the webhook if tag mode). Clones the repo, checks out the branch,
-    reviews changes, comments, and approves if all looks good.
+    Run the GitHub review agent for a triggered PR (``opened`` / ``synchronize`` in auto
+    mode, or ``labeled`` with ``greagent:review`` for an explicit run or rerun). Clones
+    the repo, checks out the branch, reviews changes, comments, and approves if all looks good.
 
     Checkpoints are keyed by ``thread_id`` = ``github:{owner}/{repo}#pr-{n}`` so the
     same PR run can be resumed or replayed from stored LangGraph state.

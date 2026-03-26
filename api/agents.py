@@ -79,9 +79,11 @@ async def get_coder_settings(user_id: UUID = Depends(get_current_user_id)):
         config_map = {
             str(ra.repository_id): {
                 "enabled": ra.enabled,
-                "mode": ra.config_json.get("mode", TRIGGER_MODE_AUTO)
-                if ra.config_json
-                else TRIGGER_MODE_AUTO,
+                "mode": (
+                    ra.config_json.get("mode", TRIGGER_MODE_AUTO)
+                    if ra.config_json
+                    else TRIGGER_MODE_AUTO
+                ),
             }
             for ra in repo_agents
         }
@@ -101,7 +103,9 @@ async def get_coder_settings(user_id: UUID = Depends(get_current_user_id)):
                     "owner": repo.owner,
                     "description": None,
                     "language": None,
-                    "updatedAt": repo.created_at.isoformat() if repo.created_at else None,
+                    "updatedAt": (
+                        repo.created_at.isoformat() if repo.created_at else None
+                    ),
                 }
             )
 
@@ -340,9 +344,9 @@ def _workflow_usage_payload(
             {
                 "githubFullName": row.github_full_name,
                 "workflow": wf,
-                "repositoryId": str(row.repository_id)
-                if row.repository_id is not None
-                else None,
+                "repositoryId": (
+                    str(row.repository_id) if row.repository_id is not None else None
+                ),
                 "distinctItemCount": int(row.distinct_items or 0),
                 "runCount": int(row.runs or 0),
                 "totalInputTokens": int(row.input_tokens or 0),
@@ -372,7 +376,9 @@ async def get_workflow_usage(
         None,
         description="Filter by workflow: code (issues) or review (PRs). Omit for all.",
     ),
-    repo_limit: int = Query(50, ge=1, le=200, description="Max repository/workflow rows"),
+    repo_limit: int = Query(
+        50, ge=1, le=200, description="Max repository/workflow rows"
+    ),
     item_limit: int = Query(
         100,
         ge=1,
@@ -388,9 +394,13 @@ async def get_workflow_usage(
     """
     with session_scope() as session:
         _, org = require_user_and_owned_org(session, user_id)
-        repos = session.execute(
-            select(Repository).where(Repository.organization_id == org.id)
-        ).scalars().all()
+        repos = (
+            session.execute(
+                select(Repository).where(Repository.organization_id == org.id)
+            )
+            .scalars()
+            .all()
+        )
         full_names = [f"{r.owner}/{r.name}" for r in repos]
 
     return _workflow_usage_payload(
@@ -400,35 +410,3 @@ async def get_workflow_usage(
         item_limit=item_limit,
         workflow=workflow,
     )
-
-
-@router.get("/coder/usage")
-async def get_coder_usage_legacy(
-    user_id: UUID = Depends(get_current_user_id),
-    repo_limit: int = Query(50, ge=1, le=200),
-    issue_limit: int = Query(100, ge=1, le=500),
-):
-    """
-    Same data as ``GET /agents/usage?workflow=code`` with legacy response shape (``issues``).
-    """
-    with session_scope() as session:
-        _, org = require_user_and_owned_org(session, user_id)
-        repos = session.execute(
-            select(Repository).where(Repository.organization_id == org.id)
-        ).scalars().all()
-        full_names = [f"{r.owner}/{r.name}" for r in repos]
-
-    payload = _workflow_usage_payload(
-        org_id=org.id,
-        full_names=full_names,
-        repo_limit=repo_limit,
-        item_limit=issue_limit,
-        workflow=GitHubWorkflowKind.code,
-    )
-    for repo in payload["repositories"]:
-        repo["distinctIssueCount"] = repo.pop("distinctItemCount")
-        repo["issues"] = repo.pop("items")
-        for item in repo["issues"]:
-            item["issueNumber"] = item.pop("itemNumber")
-            item.pop("workflow", None)
-    return payload
