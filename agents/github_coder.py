@@ -26,7 +26,6 @@ from constants import (
     AGENT_LLM_PROVIDER,
     daytona_sandbox_enabled,
     daytona_sandbox_home,
-    get_agent_model_name,
     git_identity_from_env,
 )
 from logger import get_logger
@@ -257,5 +256,4 @@ Please implement the requested changes:
             thread_id,
             usage_cb,
             provider=AGENT_LLM_PROVIDER,
-            fallback_model_name=get_agent_model_name(),
         )

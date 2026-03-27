@@ -1,1 +1,1 @@
-"""Test suite for LocalCode."""
+"""Test suite for Greagent."""

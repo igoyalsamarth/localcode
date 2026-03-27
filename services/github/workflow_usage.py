@@ -96,7 +96,6 @@ def record_github_workflow_usage(
     thread_id: str,
     usage_cb: AgentLlmUsageCallbackHandler,
     provider: str,
-    fallback_model_name: str,
 ) -> None:
     """
     Insert one ``AgentWorkflowUsage`` row after an agent run.
@@ -106,23 +105,12 @@ def record_github_workflow_usage(
     raw = dict(usage_cb.usage_metadata)
     serializable = _usage_to_json(raw) if raw else None
     inp, out, total = _sum_tokens(raw)
-    model_label = ", ".join(sorted(raw.keys())) if raw else fallback_model_name
+    model_label = ", ".join(sorted(raw.keys())) if raw else "unknown"
 
     try:
         with session_scope() as session:
             repo_id, org_id = _resolve_repo_by_owner_name(session, owner, repo_name)
             cost, catalog_model = _compute_cost_and_catalog_model(session, provider, raw)
-            if catalog_model is None and raw:
-                stmt = select(Model).where(
-                    Model.provider == provider,
-                    Model.name == fallback_model_name,
-                )
-                catalog_model = session.execute(stmt).scalar_one_or_none()
-                if catalog_model and inp + out > 0:
-                    cost = (
-                        catalog_model.input_cost_per_token * inp
-                        + catalog_model.output_cost_per_token * out
-                    )
 
             row = AgentWorkflowUsage(
                 workflow=workflow,
@@ -166,7 +154,6 @@ def record_issue_workflow_usage(
     usage_cb: AgentLlmUsageCallbackHandler,
     *,
     provider: str,
-    fallback_model_name: str,
 ) -> None:
     record_github_workflow_usage(
         workflow=GitHubWorkflowKind.code,
@@ -177,7 +164,6 @@ def record_issue_workflow_usage(
         thread_id=thread_id,
         usage_cb=usage_cb,
         provider=provider,
-        fallback_model_name=fallback_model_name,
     )
 
 
@@ -187,7 +173,6 @@ def record_pr_workflow_usage(
     usage_cb: AgentLlmUsageCallbackHandler,
     *,
     provider: str,
-    fallback_model_name: str,
 ) -> None:
     record_github_workflow_usage(
         workflow=GitHubWorkflowKind.review,
@@ -198,5 +183,4 @@ def record_pr_workflow_usage(
         thread_id=thread_id,
         usage_cb=usage_cb,
         provider=provider,
-        fallback_model_name=fallback_model_name,
     )

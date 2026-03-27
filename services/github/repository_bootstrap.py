@@ -13,6 +13,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from constants import default_catalog_model_spec
 from model.enums import AgentType
 from model.tables import Agent, Model, Repository, RepositoryAgent
 from services.github.trigger_modes import TRIGGER_MODE_AUTO
@@ -26,7 +27,13 @@ _AGENT_DEFAULT_DISPLAY_NAMES: dict[AgentType, str] = {
 def get_or_create_default_model(session: Session) -> Model:
     m = session.execute(select(Model).limit(1)).scalar_one_or_none()
     if not m:
-        m = Model(provider="openai", name="gpt-4")
+        provider, name, inp, out = default_catalog_model_spec()
+        m = Model(
+            provider=provider,
+            name=name,
+            input_cost_per_token=inp,
+            output_cost_per_token=out,
+        )
         session.add(m)
         session.flush()
     return m

@@ -1,7 +1,7 @@
 .PHONY: help install dev-infra dev-up dev-down docker-up docker-down docker-logs scale-workers test test-cov test-unit test-watch clean
 
 help:
-	@echo "LocalCode - Microservices Commands"
+	@echo "Greagent - Microservices Commands"
 	@echo ""
 	@echo "Development:"
 	@echo "  make install       - Install dependencies"
@@ -29,7 +29,7 @@ install:
 
 dev-infra:
 	@echo "Starting RabbitMQ..."
-	docker run -d --name localcode-rabbitmq \
+	docker run -d --name greagent-rabbitmq \
 		-p 5672:5672 \
 		-p 15672:15672 \
 		rabbitmq:3.13-management-alpine || true
@@ -41,8 +41,8 @@ dev-infra:
 
 dev-down:
 	@echo "Stopping infrastructure..."
-	docker stop localcode-rabbitmq || true
-	docker rm localcode-rabbitmq || true
+	docker stop greagent-rabbitmq || true
+	docker rm greagent-rabbitmq || true
 
 dev-up:
 	@echo "Start these in separate terminals:"

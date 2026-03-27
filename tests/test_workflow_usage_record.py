@@ -80,7 +80,6 @@ class TestWorkflowUsageRecord:
                 "github:o/r#issue-9",
                 cb,
                 provider="ollama",
-                fallback_model_name="m1",
             )
 
         row = db_session.execute(select(AgentWorkflowUsage)).scalar_one()

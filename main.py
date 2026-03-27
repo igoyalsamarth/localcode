@@ -1,5 +1,5 @@
 """
-Main entry point for LocalCode webhook server.
+Main entry point for Greagent webhook server.
 
 Run with: uv run main.py or python main.py
 """
@@ -11,8 +11,8 @@ logger = get_logger(__name__)
 
 
 def main() -> None:
-    """Start the LocalCode webhook server."""
-    logger.info("Starting LocalCode webhook server...")
+    """Start the Greagent webhook server."""
+    logger.info("Starting Greagent webhook server...")
 
     uvicorn.run(
         "app:app",

@@ -28,7 +28,6 @@ from constants import (
     AGENT_LLM_PROVIDER,
     daytona_sandbox_enabled,
     daytona_sandbox_home,
-    get_agent_model_name,
     git_identity_from_env,
 )
 from logger import get_logger
@@ -245,6 +244,11 @@ Remember: Use inline comments for specific code feedback, and the summary commen
     os.environ["GITHUB_PR_NUMBER"] = str(pr.pr_number)
     os.environ["GITHUB_PR_HEAD_SHA"] = pr.head_sha
 
+    # LangChain tools run in this worker process. Daytona only puts GH_TOKEN in the
+    # sandbox env, so without this the inline review tool sees no token on the host.
+    _previous_gh_token = os.environ.get("GH_TOKEN")
+    os.environ["GH_TOKEN"] = token_value
+
     daytona_session = None
     try:
         if use_daytona:
@@ -294,6 +298,10 @@ Remember: Use inline comments for specific code feedback, and the summary commen
                 )
                 stream_deep_agent(agent, prompt, stream_config)
     finally:
+        if _previous_gh_token is None:
+            os.environ.pop("GH_TOKEN", None)
+        else:
+            os.environ["GH_TOKEN"] = _previous_gh_token
         llm.callbacks = None
         stop_sandbox(daytona_session)
         record_pr_workflow_usage(
@@ -301,5 +309,4 @@ Remember: Use inline comments for specific code feedback, and the summary commen
             thread_id,
             usage_cb,
             provider=AGENT_LLM_PROVIDER,
-            fallback_model_name=get_agent_model_name(),
         )

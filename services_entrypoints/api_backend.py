@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="LocalCode API Backend",
+    title="Greagent API Backend",
     description="Main API for user authentication, onboarding, agent management, and webhook handling",
     version="0.1.0",
     lifespan=lifespan,
@@ -64,8 +64,8 @@ app.include_router(github_router)
 
 def main() -> None:
     """Start the API Backend service."""
-    logger.info("Starting LocalCode API Backend service...")
-    
+    logger.info("Starting Greagent API Backend service...")
+
     uvicorn.run(
         "services_entrypoints.api_backend:app",
         host="0.0.0.0",

@@ -1,7 +1,7 @@
 services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
-    container_name: localcode-rabbitmq
+    container_name: greagent-rabbitmq
     ports:
       - "5672:5672"
       - "15672:15672"
@@ -14,13 +14,13 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - localcode-network
+      - greagent-network
 
   api-backend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: localcode-api-backend
+    container_name: greagent-api-backend
     command: uv run api-backend
     ports:
       - "8000:8000"
@@ -33,7 +33,7 @@ services:
       rabbitmq:
         condition: service_healthy
     networks:
-      - localcode-network
+      - greagent-network
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -52,7 +52,7 @@ services:
       rabbitmq:
         condition: service_healthy
     networks:
-      - localcode-network
+      - greagent-network
     restart: unless-stopped
     deploy:
       replicas: 2
@@ -60,5 +60,5 @@ services:
       - "host.docker.internal:host-gateway"
 
 networks:
-  localcode-network:
+  greagent-network:
     driver: bridge

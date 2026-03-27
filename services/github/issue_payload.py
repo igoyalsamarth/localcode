@@ -74,7 +74,8 @@ class IssueOpenedForCoder(BaseModel):
     @classmethod
     def from_issues_webhook(cls, data: dict[str, Any]) -> "IssueOpenedForCoder | None":
         """
-        Legacy: ``labeled`` + ``greagent:code`` only.
+        Build a coder work item from a ``labeled`` issue webhook when the label is
+        ``greagent:code``.
 
         Prefer :meth:`resolve_coder_issue_work` for routing that respects DB config.
         """

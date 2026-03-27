@@ -1,5 +1,7 @@
 """Tests for repository bootstrap utilities."""
 
+from decimal import Decimal
+
 import pytest
 
 from services.github.repository_bootstrap import (
@@ -31,8 +33,10 @@ class TestRepositoryBootstrap:
         model = get_or_create_default_model(db_session)
 
         assert model is not None
-        assert model.provider == "openai"
-        assert model.name == "gpt-4"
+        assert model.provider == "ollama"
+        assert model.name == "kimi-k2.5"
+        assert model.input_cost_per_token == Decimal("0.60") / Decimal(1_000_000)
+        assert model.output_cost_per_token == Decimal("3.00") / Decimal(1_000_000)
 
     def test_get_or_create_default_model_returns_existing(self, db_session):
         """Test returning existing default model."""

@@ -5,5 +5,5 @@
 
 set -e
 
-echo "Starting LocalCode Worker..."
+echo "Starting Greagent Worker..."
 uv run worker

@@ -20,24 +20,26 @@ logger = get_logger(__name__)
 def main() -> None:
     """
     Start the Dramatiq worker process.
-    
+
     Loads ``task_queue.tasks`` so workers consume both ``github_coder`` and ``github_reviewer``
     queues (and any other actors defined in that module).
     """
-    logger.info("Starting LocalCode Worker service...")
-    
+    logger.info("Starting Greagent Worker service...")
+
     create_tables()
     logger.info("Database tables ensured")
-    
+
     init_checkpointer()
     logger.info("Checkpointer initialized")
-    
+
     try:
         sys.argv = [
             "dramatiq",
             "task_queue.tasks",
-            "--processes", "2",
-            "--threads", "4",
+            "--processes",
+            "2",
+            "--threads",
+            "4",
             "--verbose",
         ]
         dramatiq_main()

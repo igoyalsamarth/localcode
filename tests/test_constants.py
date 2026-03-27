@@ -4,11 +4,14 @@ import os
 import pytest
 from unittest.mock import patch
 
+from decimal import Decimal
+
 from constants import (
     AGENT_LLM_PROVIDER,
     OLLAMA_BASE_URL,
     daytona_sandbox_enabled,
     daytona_sandbox_home,
+    default_catalog_model_spec,
     get_agent_model_name,
     get_database_url,
     git_identity_from_env,
@@ -26,13 +29,26 @@ class TestConstants:
         """Test default agent model name."""
         with patch.dict(os.environ, {}, clear=True):
             model = get_agent_model_name()
-            assert model == "kimi-k2.5:cloud"
+            assert model == "kimi-k2.5"
 
     def test_get_agent_model_name_custom(self):
         """Test custom model name from env."""
         with patch.dict(os.environ, {"MODEL": "custom-model"}, clear=True):
             model = get_agent_model_name()
             assert model == "custom-model"
+
+    def test_default_catalog_model_spec(self):
+        """Default catalog row matches Kimi-class pricing and MODEL/provider env."""
+        with patch.dict(
+            os.environ,
+            {"MODEL": "kimi-k2.5", "AGENT_LLM_PROVIDER": "ollama"},
+            clear=True,
+        ):
+            prov, name, inp, out = default_catalog_model_spec()
+            assert prov == "ollama"
+            assert name == "kimi-k2.5"
+            assert inp == Decimal("0.60") / Decimal(1_000_000)
+            assert out == Decimal("3.00") / Decimal(1_000_000)
 
     def test_get_database_url_missing(self):
         """Test database URL raises error when not set."""

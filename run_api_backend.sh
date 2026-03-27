@@ -5,5 +5,5 @@
 
 set -e
 
-echo "Starting LocalCode API Backend..."
+echo "Starting Greagent API Backend..."
 uv run api-backend

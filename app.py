@@ -1,5 +1,5 @@
 """
-FastAPI application setup for LocalCode webhook server.
+FastAPI application setup for Greagent webhook server.
 
 GitHub webhooks drive deep agents: issue workflow (``greagent:code`` / auto mode) and
 PR workflow (``greagent:review`` / auto on sync), with Dramatiq workers processing runs.
@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="LocalCode Webhook Server",
+    title="Greagent Webhook Server",
     description="Receives GitHub webhooks and triggers the agent on new issues",
     version="0.1.0",
     lifespan=lifespan,
