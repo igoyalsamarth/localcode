@@ -31,3 +31,23 @@ def get_current_user_id(
         raise HTTPException(status_code=401, detail="Token expired") from None
     except (jwt.InvalidTokenError, ValueError, KeyError):
         raise HTTPException(status_code=401, detail="Invalid token") from None
+
+
+def get_current_org_id(
+    creds: HTTPAuthorizationCredentials | None = Depends(security),
+) -> UUID:
+    """Require a valid Bearer session JWT; return ``org_id`` from the payload."""
+    if creds is None or not creds.credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = decode_session_token(creds.credentials)
+        return UUID(str(payload["org_id"]))
+    except RuntimeError:
+        raise HTTPException(
+            status_code=500,
+            detail="JWT_SECRET is not configured on the server",
+        ) from None
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired") from None
+    except (jwt.InvalidTokenError, ValueError, KeyError):
+        raise HTTPException(status_code=401, detail="Invalid token") from None

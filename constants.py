@@ -69,6 +69,13 @@ GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY", "")
 
 CLIENT_URL = os.environ.get("CLIENT_URL", "http://localhost:3000")
 
+# Dodo Payments (checkout + webhooks). Keys must never be exposed to the browser.
+DODO_PAYMENTS_API_KEY = os.environ.get("DODO_PAYMENTS_API_KEY", "").strip()
+DODO_PAYMENTS_ENVIRONMENT = os.environ.get("DODO_PAYMENTS_ENVIRONMENT", "test_mode").strip()
+DODO_PAYMENTS_WEBHOOK_KEY = os.environ.get("DODO_PAYMENTS_WEBHOOK_KEY", "").strip()
+# Product id from Dodo dashboard (e.g. pdt_...) for the paid “Ship Goblin” plan.
+DODO_PRODUCT_ID_SHIP_GOBLIN = os.environ.get("DODO_PRODUCT_ID_SHIP_GOBLIN", "").strip()
+
 # Session JWT (issued after GitHub OAuth user login; used as API Bearer token)
 JWT_SECRET = os.environ.get("JWT_SECRET", "").strip()
 JWT_EXPIRE_DAYS = int(os.environ.get("JWT_EXPIRE_DAYS", "7"))

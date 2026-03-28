@@ -2,6 +2,9 @@
   "mcpServers": {
     "docs-langchain": {
       "url": "https://docs.langchain.com/mcp"
+    },
+    "dodo-knowledge": {
+      "url": "https://knowledge.dodopayments.com/mcp"
     }
   }
 }

@@ -22,6 +22,7 @@ dependencies = [
   "langchain-daytona>=0.0.4",
   "daytona>=0.153.0",
   "dramatiq[rabbitmq]>=1.17.0",
+  "dodopayments[webhooks]>=1.92.1",
 ]
 
 [project.optional-dependencies]

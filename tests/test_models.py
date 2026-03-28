@@ -181,6 +181,9 @@ class TestModels:
 
         subscription = Subscription(
             organization_id=org.id,
+            dodo_subscription_id="sub_test_1",
+            dodo_product_id="pdt_test",
+            dodo_quantity=1,
             status=SubscriptionStatus.active,
             billing_cycle=BillingCycle.monthly,
         )
@@ -189,6 +192,7 @@ class TestModels:
 
         assert subscription.id is not None
         assert subscription.status == SubscriptionStatus.active
+        assert subscription.dodo_subscription_id == "sub_test_1"
 
     def test_user_organization_relationship(self, db_session):
         """Test User-Organization relationship."""

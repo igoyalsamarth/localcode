@@ -37,19 +37,25 @@ class TestEnums:
         assert len(GitHubWorkflowKind) == 2
 
     def test_subscription_status_values(self):
-        """Test SubscriptionStatus enum values."""
+        """Test SubscriptionStatus enum values (Dodo-aligned)."""
+        assert SubscriptionStatus.pending == "pending"
         assert SubscriptionStatus.active == "active"
+        assert SubscriptionStatus.on_hold == "on_hold"
         assert SubscriptionStatus.cancelled == "cancelled"
         assert SubscriptionStatus.past_due == "past_due"
+        assert SubscriptionStatus.failed == "failed"
+        assert SubscriptionStatus.expired == "expired"
 
-        assert len(SubscriptionStatus) == 3
+        assert len(SubscriptionStatus) == 7
 
     def test_billing_cycle_values(self):
         """Test BillingCycle enum values."""
+        assert BillingCycle.daily == "daily"
+        assert BillingCycle.weekly == "weekly"
         assert BillingCycle.monthly == "monthly"
         assert BillingCycle.yearly == "yearly"
 
-        assert len(BillingCycle) == 2
+        assert len(BillingCycle) == 4
 
     def test_enums_are_string_enums(self):
         """Test all enums inherit from StrEnum."""

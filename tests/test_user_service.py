@@ -9,8 +9,8 @@ from services.user_service import (
     get_user_by_github_id,
     get_user_by_email,
 )
-from model.tables import User, Organization, OrganizationMember, Subscription
-from model.enums import MemberRole, SubscriptionStatus, BillingCycle
+from model.tables import User, Organization, OrganizationMember
+from model.enums import MemberRole
 
 
 @pytest.mark.unit
@@ -86,13 +86,6 @@ class TestUserService:
         ).first()
         assert member is not None
         assert member.role == MemberRole.owner
-        
-        subscription = db_session.query(Subscription).filter_by(
-            organization_id=org.id,
-        ).first()
-        assert subscription is not None
-        assert subscription.status == SubscriptionStatus.active
-        assert subscription.billing_cycle == BillingCycle.monthly
 
     def test_get_or_create_organization_existing(self, db_session):
         """Test getting an existing organization."""

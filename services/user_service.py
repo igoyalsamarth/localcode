@@ -4,8 +4,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-from model.tables import User, Organization, OrganizationMember, Subscription
-from model.enums import MemberRole, SubscriptionStatus, BillingCycle
+from model.tables import User, Organization, OrganizationMember
+from model.enums import MemberRole
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -97,16 +97,9 @@ def get_or_create_organization(
         role=MemberRole.owner,
     )
     session.add(member)
-    
-    subscription = Subscription(
-        organization_id=org.id,
-        status=SubscriptionStatus.active,
-        billing_cycle=BillingCycle.monthly,
-    )
-    session.add(subscription)
-    
+
     session.flush()
-    logger.info(f"Created organization with subscription for user: {user.github_login}")
+    logger.info(f"Created organization for user: {user.github_login}")
     
     return org
 

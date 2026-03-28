@@ -80,6 +80,9 @@ class Organization(Base):
         nullable=False,
     )
     github_installation_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    dodo_customer_id: Mapped[str | None] = mapped_column(
+        String(128), unique=True, nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     owner: Mapped["User"] = relationship("User", back_populates="owned_organizations")
@@ -362,7 +365,7 @@ class AgentWorkflowUsage(Base):
 
 
 # ---------------------------------------------------------------------------
-# Subscriptions
+# Subscriptions (Dodo-backed; rows appear when checkout completes / webhooks fire)
 # ---------------------------------------------------------------------------
 
 
@@ -378,17 +381,44 @@ class Subscription(Base):
         UUID(as_uuid=True),
         ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
     )
+    dodo_subscription_id: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    dodo_product_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    dodo_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[SubscriptionStatus] = mapped_column(
-        Enum(SubscriptionStatus),
+        Enum(SubscriptionStatus, native_enum=False, length=24),
         nullable=False,
     )
     billing_cycle: Mapped[BillingCycle] = mapped_column(
-        Enum(BillingCycle),
+        Enum(BillingCycle, native_enum=False, length=16),
         nullable=False,
     )
+    current_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
     organization: Mapped["Organization"] = relationship(
         "Organization", back_populates="subscriptions"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dodo webhook idempotency (Standard Webhooks ``webhook-id``)
+# ---------------------------------------------------------------------------
+
+
+class BillingWebhookDelivery(Base):
+    __tablename__ = "billing_webhook_deliveries"
+
+    webhook_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    event_type: Mapped[str] = mapped_column(String(96), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )

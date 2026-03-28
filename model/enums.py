@@ -23,11 +23,17 @@ class GitHubWorkflowKind(StrEnum):
 
 
 class SubscriptionStatus(StrEnum):
+    pending = "pending"
     active = "active"
+    on_hold = "on_hold"
     cancelled = "cancelled"
     past_due = "past_due"
+    failed = "failed"
+    expired = "expired"
 
 
 class BillingCycle(StrEnum):
+    daily = "daily"
+    weekly = "weekly"
     monthly = "monthly"
     yearly = "yearly"

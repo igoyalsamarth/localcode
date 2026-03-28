@@ -5,6 +5,7 @@ from api.auth import router as auth_router
 from api.onboarding import router as onboarding_router
 from api.connections import router as connections_router
 from api.agents import router as agents_router
+from api.billing import router as billing_router
 from api.wh import github_router
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "onboarding_router",
     "connections_router",
     "agents_router",
+    "billing_router",
     "github_router",
 ]

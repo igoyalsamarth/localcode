@@ -195,8 +195,12 @@ class RepositoryAgent(RepositoryAgentBase):
 
 class SubscriptionBase(BaseModel):
     organization_id: UUID
+    dodo_subscription_id: str
+    dodo_product_id: str
+    dodo_quantity: int = 1
     status: SubscriptionStatus
     billing_cycle: BillingCycle
+    current_period_end: datetime | None = None
 
 
 class SubscriptionCreate(SubscriptionBase):
@@ -208,3 +212,4 @@ class Subscription(SubscriptionBase):
 
     id: UUID
     created_at: datetime | None = None
+    updated_at: datetime | None = None
