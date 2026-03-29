@@ -15,6 +15,7 @@ from db import session_scope
 from logger import get_logger
 from model.enums import GitHubWorkflowKind
 from model.tables import AgentWorkflowUsage, Model, Repository
+from services.wallet import deduct_organization_wallet_for_llm_run
 from services.github.issue_payload import IssueOpenedForCoder
 from services.github.pr_payload import PROpenedForReview
 
@@ -112,6 +113,12 @@ def record_github_workflow_usage(
             repo_id, org_id = _resolve_repo_by_owner_name(session, owner, repo_name)
             cost, catalog_model = _compute_cost_and_catalog_model(session, provider, raw)
 
+            credits_charged = Decimal("0")
+            if org_id is not None:
+                credits_charged = deduct_organization_wallet_for_llm_run(
+                    session, org_id, cost
+                )
+
             row = AgentWorkflowUsage(
                 workflow=workflow,
                 organization_id=org_id,
@@ -127,6 +134,7 @@ def record_github_workflow_usage(
                 total_tokens=total,
                 usage_by_model=serializable,
                 cost=cost,
+                credits_charged_usd=credits_charged,
             )
             session.add(row)
         logger.info(

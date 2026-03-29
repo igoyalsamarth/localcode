@@ -83,6 +83,15 @@ class Organization(Base):
     dodo_customer_id: Mapped[str | None] = mapped_column(
         String(128), unique=True, nullable=True, index=True
     )
+    wallet_balance_usd: Mapped[Decimal] = mapped_column(
+        Numeric(18, 8), nullable=False, default=Decimal("0")
+    )
+    promotional_balance_usd: Mapped[Decimal] = mapped_column(
+        Numeric(18, 8), nullable=False, default=Decimal("0")
+    )
+    promotional_balance_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     owner: Mapped["User"] = relationship("User", back_populates="owned_organizations")
@@ -120,7 +129,8 @@ class OrganizationMember(Base):
         nullable=False,
     )
     role: Mapped[MemberRole] = mapped_column(
-        Enum(MemberRole),
+        # VARCHAR, not PostgreSQL CREATE TYPE — avoids races when many workers call create_all().
+        Enum(MemberRole, native_enum=False, length=16),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -252,7 +262,10 @@ class Agent(Base):
         nullable=False,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    type: Mapped[AgentType] = mapped_column(Enum(AgentType), nullable=False)
+    type: Mapped[AgentType] = mapped_column(
+        Enum(AgentType, native_enum=False, length=16),
+        nullable=False,
+    )
     price_monthly: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -355,6 +368,9 @@ class AgentWorkflowUsage(Base):
     total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     usage_by_model: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     cost: Mapped[Decimal] = mapped_column(Numeric(18, 8), default=0, nullable=False)
+    credits_charged_usd: Mapped[Decimal] = mapped_column(
+        Numeric(18, 8), nullable=False, default=Decimal("0")
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

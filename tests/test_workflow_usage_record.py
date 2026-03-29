@@ -89,3 +89,7 @@ class TestWorkflowUsageRecord:
         assert row.output_tokens == 4
         assert row.organization_id == org.id
         assert row.repository_id == repo.id
+        assert row.cost == Decimal("11")
+        assert row.credits_charged_usd == Decimal("22.04")
+        db_session.refresh(org)
+        assert org.wallet_balance_usd == Decimal("-22.04")

@@ -18,11 +18,13 @@ from constants import (
     DODO_PAYMENTS_ENVIRONMENT,
     DODO_PAYMENTS_WEBHOOK_KEY,
     DODO_PRODUCT_ID_SHIP_GOBLIN,
+    DODO_PRODUCT_ID_WALLET_TOPUP,
 )
 from db import session_scope
 from logger import get_logger
 from model.tables import BillingWebhookDelivery, Organization, Subscription, User
 from services.dodo_billing import apply_unwrapped_webhook_event
+from services.wallet import organization_spendable_balance_usd
 
 logger = get_logger(__name__)
 
@@ -91,6 +93,7 @@ class BillingSubscriptionOut(BaseModel):
 
 class BillingSubscriptionResponse(BaseModel):
     dodo_customer_id: str | None
+    spendable_balance_usd: str
     subscription: BillingSubscriptionOut | None
 
 
@@ -132,7 +135,6 @@ async def create_checkout_session(
     cancel_url = f"{base}/pricing"
 
     metadata = {
-        "greagent_user_id": str(user_id),
         "greagent_organization_id": str(org_id),
     }
 
@@ -164,9 +166,93 @@ async def create_checkout_session(
     return BillingCheckoutSessionResponse(checkout_url=url, session_id=session.session_id)
 
 
+class TopupCheckoutSessionRequest(BaseModel):
+    """Optional override when you offer multiple fixed top-up products in Dodo."""
+
+    product_id: str | None = Field(
+        default=None,
+        description="Dodo product id for the top-up SKU; defaults to DODO_PRODUCT_ID_WALLET_TOPUP",
+    )
+
+
+@router.post("/topup-checkout-session", response_model=BillingCheckoutSessionResponse)
+async def create_topup_checkout_session(
+    body: TopupCheckoutSessionRequest,
+    user_id: UUID = Depends(get_current_user_id),
+    org_id: UUID = Depends(get_current_org_id),
+):
+    """
+    Create a Dodo hosted checkout for a one-time wallet top-up.
+
+    Webhook ``payment.succeeded`` credits the organization wallet when metadata
+    includes ``greagent_wallet_topup`` (set automatically by this flow).
+    """
+    product_id = (body.product_id or "").strip() or DODO_PRODUCT_ID_WALLET_TOPUP
+    if not product_id:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Wallet top-up is not configured "
+                "(set DODO_PRODUCT_ID_WALLET_TOPUP on the server)."
+            ),
+        )
+
+    client = _dodo_client_for_request()
+    if not client:
+        raise HTTPException(
+            status_code=503,
+            detail="Billing is not configured (set DODO_PAYMENTS_API_KEY on the server).",
+        )
+
+    with session_scope() as db:
+        stmt = select(User).where(User.id == user_id)
+        user = db.execute(stmt).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        email = user.email
+        display_name = user.name or user.username or user.github_login or email.split("@")[0]
+
+    base = CLIENT_URL.rstrip("/")
+    return_url = f"{base}/settings/billing"
+    cancel_url = f"{base}/settings/billing"
+
+    metadata = {
+        "greagent_organization_id": str(org_id),
+        "greagent_wallet_topup": "true",
+    }
+
+    def _create():
+        return client.checkout_sessions.create(
+            product_cart=[{"product_id": product_id, "quantity": 1}],
+            customer={"email": email, "name": display_name},
+            return_url=return_url,
+            cancel_url=cancel_url,
+            metadata=metadata,
+        )
+
+    try:
+        session = await asyncio.to_thread(_create)
+    except Exception as e:
+        logger.exception("Dodo top-up checkout_sessions.create failed: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail="Could not start top-up checkout. Try again or contact support.",
+        ) from e
+
+    url = session.checkout_url
+    if not url:
+        raise HTTPException(
+            status_code=502,
+            detail="Checkout session created without a URL.",
+        )
+
+    return BillingCheckoutSessionResponse(checkout_url=url, session_id=session.session_id)
+
+
 @router.get("/subscription", response_model=BillingSubscriptionResponse)
 async def get_billing_subscription(org_id: UUID = Depends(get_current_org_id)):
-    """Return Dodo linkage and the latest subscription row for the session organization."""
+    """Return Dodo linkage, spendable wallet total (paid + active promo), and subscription."""
     with session_scope() as db:
         org = db.get(Organization, org_id)
         if org is None:
@@ -180,16 +266,20 @@ async def get_billing_subscription(org_id: UUID = Depends(get_current_org_id)):
         sub = db.execute(stmt).scalars().first()
 
         if sub is None:
+            spendable = organization_spendable_balance_usd(org)
             return BillingSubscriptionResponse(
                 dodo_customer_id=org.dodo_customer_id,
+                spendable_balance_usd=str(spendable),
                 subscription=None,
             )
 
         cpe = sub.current_period_end
         cpe_s = cpe.isoformat() if cpe else None
 
+        spendable = organization_spendable_balance_usd(org)
         return BillingSubscriptionResponse(
             dodo_customer_id=org.dodo_customer_id,
+            spendable_balance_usd=str(spendable),
             subscription=BillingSubscriptionOut(
                 dodo_subscription_id=sub.dodo_subscription_id,
                 dodo_product_id=sub.dodo_product_id,

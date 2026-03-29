@@ -1,7 +1,10 @@
 """Tests for user service."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
-from uuid import uuid4
+
+from constants import SIGNUP_PROMO_WALLET_USD
 
 from services.user_service import (
     create_or_update_user,
@@ -86,6 +89,14 @@ class TestUserService:
         ).first()
         assert member is not None
         assert member.role == MemberRole.owner
+        assert org.promotional_balance_usd == SIGNUP_PROMO_WALLET_USD
+        assert org.promotional_balance_expires_at is not None
+        now = datetime.now(timezone.utc)
+        exp = org.promotional_balance_expires_at
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        delta = exp - now
+        assert timedelta(days=29) < delta < timedelta(days=31)
 
     def test_get_or_create_organization_existing(self, db_session):
         """Test getting an existing organization."""

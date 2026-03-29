@@ -69,12 +69,18 @@ GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY", "")
 
 CLIENT_URL = os.environ.get("CLIENT_URL", "http://localhost:3000")
 
+# Signup promo: separate from paid ``wallet_balance_usd`` (top-ups / subscriptions add there only).
+SIGNUP_PROMO_WALLET_USD = Decimal(os.environ.get("SIGNUP_PROMO_WALLET_USD", "5"))
+SIGNUP_PROMO_DURATION_DAYS = int(os.environ.get("SIGNUP_PROMO_DURATION_DAYS", "30"))
+
 # Dodo Payments (checkout + webhooks). Keys must never be exposed to the browser.
 DODO_PAYMENTS_API_KEY = os.environ.get("DODO_PAYMENTS_API_KEY", "").strip()
 DODO_PAYMENTS_ENVIRONMENT = os.environ.get("DODO_PAYMENTS_ENVIRONMENT", "test_mode").strip()
 DODO_PAYMENTS_WEBHOOK_KEY = os.environ.get("DODO_PAYMENTS_WEBHOOK_KEY", "").strip()
 # Product id from Dodo dashboard (e.g. pdt_...) for the paid “Ship Goblin” plan.
 DODO_PRODUCT_ID_SHIP_GOBLIN = os.environ.get("DODO_PRODUCT_ID_SHIP_GOBLIN", "").strip()
+# One-time product for wallet top-up (hosted checkout).
+DODO_PRODUCT_ID_WALLET_TOPUP = os.environ.get("DODO_PRODUCT_ID_WALLET_TOPUP", "").strip()
 
 # Session JWT (issued after GitHub OAuth user login; used as API Bearer token)
 JWT_SECRET = os.environ.get("JWT_SECRET", "").strip()

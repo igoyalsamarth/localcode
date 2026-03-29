@@ -11,7 +11,11 @@ from sqlalchemy.orm import Session
 
 from logger import get_logger
 from model.enums import BillingCycle, SubscriptionStatus
-from model.tables import Organization, Subscription, User
+from model.tables import Organization, Subscription
+from services.wallet import (
+    credit_organization_wallet_usd,
+    dodo_amount_usd_from_minor_units,
+)
 
 if TYPE_CHECKING:
     from dodopayments.types.subscription import Subscription as DodoSubscriptionPayload
@@ -82,26 +86,9 @@ def resolve_organization_id(
             )
         return org.id
 
-    user_s = metadata.get("greagent_user_id")
-    if user_s:
-        try:
-            uid = UUID(user_s)
-        except ValueError as e:
-            raise ValueError(f"Invalid greagent_user_id in metadata: {user_s!r}") from e
-
-        user = session.get(User, uid)
-        if user is None:
-            raise ValueError(f"No user {uid} for greagent_user_id metadata")
-        org = session.execute(
-            select(Organization).where(Organization.owner_user_id == user.id)
-        ).scalar_one_or_none()
-        if org is None:
-            raise ValueError(f"No owner organization for user {uid}")
-        return org.id
-
     raise ValueError(
-        "Cannot resolve organization: set greagent_organization_id on checkout metadata, "
-        "or greagent_user_id, or reuse an existing Organization.dodo_customer_id match"
+        "Cannot resolve organization: set greagent_organization_id on checkout metadata "
+        "or match an existing Organization.dodo_customer_id"
     )
 
 
@@ -149,15 +136,71 @@ def sync_subscription_from_dodo(session: Session, dodo_sub: DodoSubscriptionPayl
     logger.info("Updated subscription row for Dodo %s org=%s", sub_id, org_id)
 
 
+def credit_wallet_for_subscription_renewal(session: Session, dodo_sub: object) -> None:
+    """
+    Add one billing period’s subscription amount to the org wallet (USD).
+
+    Intended for ``subscription.renewed`` (includes the first billing period per Dodo).
+    """
+    meta = dict(getattr(dodo_sub, "metadata", None) or {})
+    dodo_customer_id = dodo_sub.customer.customer_id
+    org_id = resolve_organization_id(session, meta, dodo_customer_id)
+    minor = getattr(dodo_sub, "recurring_pre_tax_amount", None)
+    if minor is None:
+        return
+    usd = dodo_amount_usd_from_minor_units(int(minor))
+    credit_organization_wallet_usd(session, org_id, usd)
+    logger.info(
+        "Wallet credited for subscription renewal org=%s amount_usd=%s",
+        org_id,
+        usd,
+    )
+
+
+def credit_wallet_for_topup_payment(session: Session, payment: object) -> None:
+    """Credit wallet when a one-off checkout was started as a wallet top-up."""
+    meta = dict(getattr(payment, "metadata", None) or {})
+    flag = str(meta.get("greagent_wallet_topup", "")).lower()
+    if flag not in ("1", "true", "yes"):
+        return
+    org_s = meta.get("greagent_organization_id")
+    if not org_s:
+        raise ValueError(
+            "wallet top-up payment missing greagent_organization_id in metadata"
+        )
+    try:
+        oid = UUID(org_s)
+    except ValueError as e:
+        raise ValueError(
+            f"Invalid greagent_organization_id in top-up metadata: {org_s!r}"
+        ) from e
+    org = session.get(Organization, oid)
+    if org is None:
+        raise ValueError(f"No organization {oid} for wallet top-up metadata")
+    minor = int(getattr(payment, "total_amount"))
+    usd = dodo_amount_usd_from_minor_units(minor)
+    credit_organization_wallet_usd(session, oid, usd)
+    logger.info("Wallet credited for top-up org=%s amount_usd=%s", oid, usd)
+
+
 def apply_unwrapped_webhook_event(session: Session, event: object) -> None:
     """Dispatch a verified Dodo webhook model to table updates."""
     etype = getattr(event, "type", None)
-    if etype not in _SUBSCRIPTION_WEBHOOK_TYPES:
-        logger.debug("Dodo webhook type not persisted: %s", etype)
+
+    if etype in _SUBSCRIPTION_WEBHOOK_TYPES:
+        data = getattr(event, "data", None)
+        if data is None:
+            raise ValueError(f"Dodo webhook {etype!r} missing data payload")
+        sync_subscription_from_dodo(session, data)
+        if etype == "subscription.renewed":
+            credit_wallet_for_subscription_renewal(session, data)
         return
 
-    data = getattr(event, "data", None)
-    if data is None:
-        raise ValueError(f"Dodo webhook {etype!r} missing data payload")
+    if etype == "payment.succeeded":
+        data = getattr(event, "data", None)
+        if data is None:
+            raise ValueError("Dodo webhook payment.succeeded missing data payload")
+        credit_wallet_for_topup_payment(session, data)
+        return
 
-    sync_subscription_from_dodo(session, data)
+    logger.debug("Dodo webhook type not persisted: %s", etype)

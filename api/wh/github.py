@@ -28,6 +28,11 @@ from services.github.repository_bootstrap import (
     upsert_repository_from_github,
 )
 from services.github.webhook_signature import verify_github_webhook_signature
+from services.github.agent_wallet_gate import (
+    notify_insufficient_wallet_for_issue,
+    notify_insufficient_wallet_for_pr,
+)
+from services.wallet import wallet_allows_agent_run
 from task_queue.tasks import process_github_issue, process_github_pr_review
 
 logger = get_logger(__name__)
@@ -317,6 +322,28 @@ async def _handle_issues_event(
         work.issue_number,
     )
 
+    with session_scope() as session:
+        if not wallet_allows_agent_run(session, work.owner, work.repo_name):
+            logger.info(
+                "Skipping coder enqueue (wallet below $2) for %s#%s",
+                work.full_name,
+                work.issue_number,
+            )
+            try:
+                notify_insufficient_wallet_for_issue(work)
+            except Exception:
+                logger.exception(
+                    "Failed to post insufficient-wallet comment on %s#%s",
+                    work.full_name,
+                    work.issue_number,
+                )
+            return {
+                "status": "insufficient_wallet",
+                "detail": "Organization wallet is below $2.00 USD; top up in billing settings.",
+                "repository": work.full_name,
+                "issue_number": work.issue_number,
+            }
+
     try:
         prepare_issue_for_coder_work(work)
     except Exception:
@@ -377,6 +404,28 @@ async def _handle_pull_request_event(
         work.full_name,
         work.pr_number,
     )
+
+    with session_scope() as session:
+        if not wallet_allows_agent_run(session, work.owner, work.repo_name):
+            logger.info(
+                "Skipping review enqueue (wallet below $2) for %s#%s",
+                work.full_name,
+                work.pr_number,
+            )
+            try:
+                notify_insufficient_wallet_for_pr(work)
+            except Exception:
+                logger.exception(
+                    "Failed to post insufficient-wallet comment on %s#%s",
+                    work.full_name,
+                    work.pr_number,
+                )
+            return {
+                "status": "insufficient_wallet",
+                "detail": "Organization wallet is below $2.00 USD; top up in billing settings.",
+                "repository": work.full_name,
+                "pr_number": work.pr_number,
+            }
 
     try:
         prepare_pr_for_review_work(work)

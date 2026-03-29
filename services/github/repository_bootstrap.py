@@ -25,9 +25,16 @@ _AGENT_DEFAULT_DISPLAY_NAMES: dict[AgentType, str] = {
 
 
 def get_or_create_default_model(session: Session) -> Model:
-    m = session.execute(select(Model).limit(1)).scalar_one_or_none()
+    """
+    Return the catalog row for :func:`~constants.default_catalog_model_spec`, creating it if missing.
+
+    Matches on ``(provider, name)`` from env (``AGENT_LLM_PROVIDER``, ``MODEL``), not ``LIMIT 1``,
+    so another catalog row existing does not block the default Kimi (or configured) model row.
+    """
+    provider, name, inp, out = default_catalog_model_spec()
+    stmt = select(Model).where(Model.provider == provider, Model.name == name)
+    m = session.execute(stmt).scalar_one_or_none()
     if not m:
-        provider, name, inp, out = default_catalog_model_spec()
         m = Model(
             provider=provider,
             name=name,

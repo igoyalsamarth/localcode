@@ -7,6 +7,7 @@ from sqlalchemy import select
 from model.tables import User, Organization, OrganizationMember
 from model.enums import MemberRole
 from logger import get_logger
+from services.wallet import signup_promotional_credit_defaults
 
 logger = get_logger(__name__)
 
@@ -83,10 +84,13 @@ def get_or_create_organization(
     
     org_name = org_name or user.github_login or "Personal Organization"
     logger.info(f"Creating new organization: {org_name}")
-    
+
+    promo_usd, promo_expires = signup_promotional_credit_defaults()
     org = Organization(
         name=org_name,
         owner_user_id=user.id,
+        promotional_balance_usd=promo_usd,
+        promotional_balance_expires_at=promo_expires,
     )
     session.add(org)
     session.flush()

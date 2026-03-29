@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import pytest
 
+from constants import default_catalog_model_spec
 from services.github.repository_bootstrap import (
     get_or_create_default_model,
     get_or_create_coder_agent,
@@ -39,15 +40,36 @@ class TestRepositoryBootstrap:
         assert model.output_cost_per_token == Decimal("3.00") / Decimal(1_000_000)
 
     def test_get_or_create_default_model_returns_existing(self, db_session):
-        """Test returning existing default model."""
-        model1 = Model(provider="custom", name="custom-model")
+        """Reuse row when provider+name match :func:`~constants.default_catalog_model_spec`."""
+        prov, name, inp, out = default_catalog_model_spec()
+        model1 = Model(
+            provider=prov,
+            name=name,
+            input_cost_per_token=inp,
+            output_cost_per_token=out,
+        )
         db_session.add(model1)
         db_session.commit()
 
         model2 = get_or_create_default_model(db_session)
 
         assert model2.id == model1.id
-        assert model2.provider == "custom"
+        assert model2.provider == prov
+        assert model2.name == name
+
+    def test_get_or_create_default_model_inserts_default_when_other_catalog_rows_exist(
+        self, db_session
+    ):
+        """Non-default catalog rows must not satisfy get_or_create; default row is still created."""
+        db_session.add(Model(provider="custom", name="custom-model"))
+        db_session.commit()
+
+        model2 = get_or_create_default_model(db_session)
+        prov, name, _, _ = default_catalog_model_spec()
+
+        assert model2.provider == prov
+        assert model2.name == name
+        assert db_session.query(Model).count() == 2
 
     def test_get_or_create_coder_agent_creates_new(self, db_session):
         """Test creating a new coder agent."""

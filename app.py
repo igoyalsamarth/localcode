@@ -12,7 +12,7 @@ from agents.checkpoint import init_checkpointer, shutdown_checkpointer
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from db import create_tables
+from db import create_tables, session_scope
 from api import (
     health_router,
     auth_router,
@@ -23,6 +23,7 @@ from api import (
 )
 from api.wh import github_router
 from logger import get_logger
+from services.github.repository_bootstrap import get_or_create_default_model
 
 load_dotenv()
 logger = get_logger(__name__)
@@ -33,6 +34,9 @@ async def lifespan(app: FastAPI):
     """Create DB tables and LangGraph checkpoint tables on startup."""
     create_tables()
     logger.info("Database tables ensured")
+    with session_scope() as session:
+        get_or_create_default_model(session)
+    logger.info("Default LLM catalog model ensured")
     init_checkpointer()
     yield
     shutdown_checkpointer()
