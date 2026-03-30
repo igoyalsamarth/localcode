@@ -8,7 +8,6 @@ omit =
     .venv/*
     */agents/github_coder.py
     */agents/github_reviewer.py
-    */agents/checkpoint.py
     */agents/usage_callback.py
     */agents/github_llm.py
     */agents/deep_agent_stream.py

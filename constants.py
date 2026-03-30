@@ -48,7 +48,8 @@ def get_database_url() -> str:
     url = os.environ.get("DATABASE_URL")
     if not url:
         raise RuntimeError(
-            "DATABASE_URL is not set. Get it from Supabase Dashboard → Project Settings → Database."
+            "DATABASE_URL is not set. Set it to your PostgreSQL connection URI "
+            "(e.g. postgresql://user:pass@host:5432/dbname)."
         )
     return url
 

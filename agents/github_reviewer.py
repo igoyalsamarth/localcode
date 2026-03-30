@@ -2,7 +2,8 @@
 Deep-agent GitHub reviewer: clones repos, checks out PR branches, reviews code changes.
 
 Invoked via `run_agent_on_pr` (e.g. from `services.github.review_workflow`).
-Uses a stable ``thread_id`` per PR for logging and usage rows (checkpointing disabled).
+Uses a stable workflow ``run_id`` (repo + PR number) for usage rows, stream config,
+and Daytona labels; the usage table's primary key is unique per execution.
 
 When ``DAYTONA_API_KEY`` is set, execution uses a `Daytona`_ remote sandbox (``langchain-daytona``);
 otherwise the local ``LocalShellBackend`` virtual filesystem under ``./workspace``.
@@ -18,7 +19,6 @@ from pathlib import Path
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 
-from agents.checkpoint import github_pr_workflow_thread_id
 from agents.deep_agent_stream import stream_deep_agent
 from agents.github_llm import get_github_deep_agent_llm
 from agents.reviewer_tools import add_inline_review_comment
@@ -35,6 +35,7 @@ from services.github.agent_daytona import (
     create_daytona_agent_session,
     stop_sandbox,
 )
+from services.github.workflow_run_id import github_pr_workflow_run_id
 from services.github.workflow_usage import record_pr_workflow_usage
 from services.github.installation_token import (
     get_installation_token_for_repo,
@@ -143,7 +144,7 @@ def run_agent_on_pr(
     mode, or ``labeled`` with ``greagent:review`` for an explicit run or rerun). Clones
     the repo, checks out the branch, reviews changes, comments, and approves if all looks good.
 
-    ``thread_id`` = ``github:{owner}/{repo}#pr-{n}`` is recorded on the workflow usage row.
+    ``run_id`` is ``github:{owner}/{repo}#pr-{n}`` (see :mod:`services.github.workflow_run_id`).
     """
     token_value = access_token or get_installation_token_for_repo(
         pr.owner,
@@ -226,12 +227,12 @@ Please review this pull request:
 
 Remember: Use inline comments for specific code feedback, and the summary comment for overall observations.
 """
-    thread_id = github_pr_workflow_thread_id(pr.full_name, pr.pr_number)
+    run_id = github_pr_workflow_run_id(pr.full_name, pr.pr_number)
     usage_cb = AgentLlmUsageCallbackHandler()
     llm = get_github_deep_agent_llm()
     llm.callbacks = [usage_cb]
     stream_config: dict = {
-        "configurable": {"thread_id": thread_id},
+        "configurable": {"thread_id": run_id},
         "callbacks": [usage_cb],
     }
 
@@ -250,8 +251,8 @@ Remember: Use inline comments for specific code feedback, and the summary commen
     try:
         if use_daytona:
             logger.info(
-                "GitHub reviewer using Daytona sandbox (thread_id=%s)",
-                thread_id,
+                "GitHub reviewer using Daytona sandbox (run_id=%s)",
+                run_id,
             )
             env_vars = build_sandbox_env_vars(
                 token_value,
@@ -269,7 +270,7 @@ Remember: Use inline comments for specific code feedback, and the summary commen
                 }
             )
             backend, session = create_daytona_agent_session(
-                thread_id, env_vars, sandbox_home=sandbox_home
+                run_id, env_vars, sandbox_home=sandbox_home
             )
             daytona_session = session
             agent = create_github_reviewer_agent(backend, system_prompt=system_prompt)
@@ -303,7 +304,7 @@ Remember: Use inline comments for specific code feedback, and the summary commen
         stop_sandbox(daytona_session)
         record_pr_workflow_usage(
             pr,
-            thread_id,
+            run_id,
             usage_cb,
             provider=AGENT_LLM_PROVIDER,
         )

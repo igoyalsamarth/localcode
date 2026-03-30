@@ -92,5 +92,6 @@ class TestWorkflowUsageRecord:
         # Token LLM cost = 3*1 + 4*2 = 11; wallet charge = (11+0.02)/0.5 rounded up to cents, min 0.05
         assert row.cost == Decimal("22.04")
         assert row.credits_charged_usd == Decimal("22.04")
+        assert row.run_id == "github:o/r#issue-9"
         db_session.refresh(org)
         assert org.wallet_balance_usd == Decimal("-22.04")

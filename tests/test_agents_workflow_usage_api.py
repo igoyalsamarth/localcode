@@ -10,6 +10,10 @@ from fastapi.testclient import TestClient
 from api.jwt_session import create_session_token
 from model.enums import GitHubWorkflowKind
 from model.tables import AgentWorkflowUsage, Organization, Repository, User
+from services.github.workflow_run_id import (
+    github_issue_workflow_run_id,
+    github_pr_workflow_run_id,
+)
 
 
 @pytest.fixture
@@ -57,6 +61,11 @@ class TestAgentsWorkflowUsageAPI:
         db_session.flush()
 
         def add_row(workflow: GitHubWorkflowKind, item: int, in_tok: int, out_tok: int):
+            rid = (
+                github_issue_workflow_run_id("acme/svc", item)
+                if workflow == GitHubWorkflowKind.code
+                else github_pr_workflow_run_id("acme/svc", item)
+            )
             db_session.add(
                 AgentWorkflowUsage(
                     workflow=workflow,
@@ -64,7 +73,7 @@ class TestAgentsWorkflowUsageAPI:
                     repository_id=repo.id,
                     github_full_name="acme/svc",
                     github_item_number=item,
-                    workflow_thread_id=f"thread-{workflow}-{item}",
+                    run_id=rid,
                     provider="ollama",
                     model_name="m1",
                     input_tokens=in_tok,

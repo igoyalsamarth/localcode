@@ -134,7 +134,7 @@ rm -f /tmp/gh.tgz
 
 
 def create_daytona_agent_session(
-    thread_id: str,
+    run_id: str,
     env_vars: dict[str, str],
     *,
     sandbox_home: str | None = None,
@@ -153,7 +153,7 @@ def create_daytona_agent_session(
     params = CreateSandboxFromSnapshotParams(
         language="typescript",
         env_vars=env_vars,
-        labels={"thread_id": thread_id, "app": "greagent-github-deep-agent"},
+        labels={"run_id": run_id, "app": "greagent-github-deep-agent"},
         ephemeral=True,
     )
     sandbox = client.create(params, timeout=create_timeout_sec)

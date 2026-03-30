@@ -33,8 +33,7 @@ def create_tables() -> None:
     engine = get_engine()
     if engine.dialect.name != "postgresql":
         raise RuntimeError(
-            "create_tables() requires PostgreSQL (postgresql:// DATABASE_URL). "
-            "Unit tests must patch db.get_engine with a PostgreSQL dialect mock."
+            "create_tables() requires PostgreSQL (postgresql:// DATABASE_URL)."
         )
 
     with engine.connect() as conn:

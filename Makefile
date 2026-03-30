@@ -5,7 +5,7 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make install       - Install dependencies"
-	@echo "  make dev-infra     - Start RabbitMQ and PostgreSQL"
+	@echo "  make dev-infra     - Start RabbitMQ (Postgres via DATABASE_URL in .env)"
 	@echo "  make dev-up        - Start all services locally (3 terminals needed)"
 	@echo "  make dev-down      - Stop infrastructure"
 	@echo ""
@@ -36,7 +36,7 @@ dev-infra:
 	@echo "Infrastructure started!"
 	@echo "RabbitMQ: amqp://guest:guest@localhost:5672/ (no web UI; use rabbitmqctl via docker exec if needed)"
 	@echo ""
-	@echo "Note: Using cloud-hosted PostgreSQL from .env"
+	@echo "Note: Point DATABASE_URL in .env at your PostgreSQL instance"
 
 dev-down:
 	@echo "Stopping infrastructure..."
@@ -56,7 +56,7 @@ docker-up:
 	@echo "API Backend (with webhooks): http://localhost:8000"
 	@echo "RabbitMQ AMQP: localhost:5672 (guest/guest)"
 	@echo ""
-	@echo "Note: Using cloud-hosted PostgreSQL from .env"
+	@echo "Note: Point DATABASE_URL in .env at your PostgreSQL instance"
 
 docker-down:
 	docker-compose down

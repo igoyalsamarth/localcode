@@ -21,12 +21,12 @@ class TestDatabaseClient:
             conninfo = get_psycopg_conninfo()
             assert conninfo == test_url
 
-    def test_get_psycopg_conninfo_postgres(self):
-        """Test psycopg conninfo with postgres:// URL."""
+    def test_get_psycopg_conninfo_postgres_alias_rejected(self):
+        """postgres:// is not accepted; use postgresql://."""
         test_url = "postgres://user:pass@localhost/db"
         with patch("db.client.get_database_url", return_value=test_url):
-            conninfo = get_psycopg_conninfo()
-            assert conninfo == test_url
+            with pytest.raises(RuntimeError, match="postgresql://"):
+                get_psycopg_conninfo()
 
     def test_get_psycopg_conninfo_psycopg2(self):
         """Test psycopg conninfo converts psycopg2 driver."""
@@ -46,14 +46,14 @@ class TestDatabaseClient:
         """Test psycopg conninfo raises for SQLite."""
         test_url = "sqlite:///test.db"
         with patch("db.client.get_database_url", return_value=test_url):
-            with pytest.raises(RuntimeError, match="requires PostgreSQL"):
+            with pytest.raises(RuntimeError, match="postgresql://"):
                 get_psycopg_conninfo()
 
     def test_get_psycopg_conninfo_invalid_raises(self):
         """Test psycopg conninfo raises for invalid URL."""
         test_url = "invalid://url"
         with patch("db.client.get_database_url", return_value=test_url):
-            with pytest.raises(RuntimeError, match="must be a PostgreSQL URI"):
+            with pytest.raises(RuntimeError, match="postgresql:// URI"):
                 get_psycopg_conninfo()
 
     def test_url_for_async_postgresql(self):

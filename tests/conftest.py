@@ -1,4 +1,8 @@
-"""Pytest configuration and shared fixtures."""
+"""Pytest configuration and shared fixtures.
+
+SQLite in-memory engines here are **test-only** (JSONB shim, no PostgreSQL server).
+Production uses PostgreSQL only; see :func:`db.create_tables`.
+"""
 
 import os
 import sys
@@ -15,7 +19,7 @@ from sqlalchemy import create_engine, text, JSON
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import StaticPool
 
-# Monkey-patch JSONB to use JSON for SQLite before importing models
+# Test-only: map JSONB to JSON so in-memory SQLite can load ORM models.
 from sqlalchemy.dialects.postgresql import JSONB as _JSONB
 
 class JSONBForSQLite(JSON):
@@ -30,7 +34,7 @@ from db.client import Base
 
 @pytest.fixture(scope="session")
 def test_db_url():
-    """Return SQLite in-memory database URL for testing."""
+    """SQLite in-memory URL for unit tests (not a supported app configuration)."""
     return "sqlite:///:memory:"
 
 

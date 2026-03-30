@@ -351,7 +351,15 @@ class AgentWorkflowUsage(Base):
     )
     github_full_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     github_item_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    workflow_thread_id: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(
+        String(512),
+        nullable=False,
+        index=True,
+        doc=(
+            "Stable workflow key (repo + issue or PR). Re-runs share the same value; "
+            "row ``id`` is unique per execution."
+        ),
+    )
     provider: Mapped[str] = mapped_column(String(64), nullable=False, default="ollama")
     model_name: Mapped[str] = mapped_column(
         String(256),

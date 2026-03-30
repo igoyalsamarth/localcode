@@ -101,7 +101,7 @@ def record_github_workflow_usage(
     repo_name: str,
     github_full_name: str,
     github_item_number: int,
-    thread_id: str,
+    run_id: str,
     usage_cb: AgentLlmUsageCallbackHandler,
     provider: str,
 ) -> None:
@@ -136,7 +136,7 @@ def record_github_workflow_usage(
                 repository_id=repo_id,
                 github_full_name=github_full_name,
                 github_item_number=github_item_number,
-                workflow_thread_id=thread_id,
+                run_id=run_id,
                 provider=provider,
                 model_name=model_label,
                 model_id=catalog_model.id if catalog_model else None,
@@ -169,7 +169,7 @@ def record_github_workflow_usage(
 
 def record_issue_workflow_usage(
     issue: IssueOpenedForCoder,
-    thread_id: str,
+    run_id: str,
     usage_cb: AgentLlmUsageCallbackHandler,
     *,
     provider: str,
@@ -180,7 +180,7 @@ def record_issue_workflow_usage(
         repo_name=issue.repo_name,
         github_full_name=issue.full_name,
         github_item_number=issue.issue_number,
-        thread_id=thread_id,
+        run_id=run_id,
         usage_cb=usage_cb,
         provider=provider,
     )
@@ -188,7 +188,7 @@ def record_issue_workflow_usage(
 
 def record_pr_workflow_usage(
     pr: PROpenedForReview,
-    thread_id: str,
+    run_id: str,
     usage_cb: AgentLlmUsageCallbackHandler,
     *,
     provider: str,
@@ -199,7 +199,7 @@ def record_pr_workflow_usage(
         repo_name=pr.repo_name,
         github_full_name=pr.full_name,
         github_item_number=pr.pr_number,
-        thread_id=thread_id,
+        run_id=run_id,
         usage_cb=usage_cb,
         provider=provider,
     )

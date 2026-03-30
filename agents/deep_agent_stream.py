@@ -1,4 +1,4 @@
-"""Console streaming helper for LangGraph deep agents (shared by GitHub workflows)."""
+"""Console streaming helper for deep agents (GitHub coder / reviewer workflows)."""
 
 from __future__ import annotations
 

@@ -1,8 +1,9 @@
 """
-SQLAlchemy database client for Supabase PostgreSQL.
+SQLAlchemy database client for PostgreSQL.
 
 Connection URL comes from ``constants.get_database_url()`` (``DATABASE_URL`` env).
-Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
+Typical form: ``postgresql://USER:PASSWORD@HOST:5432/DATABASE``
+(synchronous code uses psycopg2; see driver notes below).
 """
 
 from contextlib import contextmanager
@@ -19,30 +20,26 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-# Supabase uses standard PostgreSQL; async requires asyncpg driver (postgresql+asyncpg://)
-# Sync uses psycopg2 (postgresql:// or postgresql+psycopg2://)
+# Async SQLAlchemy uses asyncpg (postgresql+asyncpg:// after :func:`_url_for_async`).
+# Sync uses psycopg2 (postgresql:// or postgresql+psycopg2://).
 
 
 def get_psycopg_conninfo() -> str:
     """
     Normalized ``postgresql://`` URI for psycopg3 (same host/credentials as SQLAlchemy).
 
-    Strips SQLAlchemy driver prefixes (e.g. ``+asyncpg``, ``+psycopg2``) so libpq-based
-    clients can reuse ``DATABASE_URL``.
+    Accepts ``postgresql://`` or the same host with ``+asyncpg`` / ``+psycopg2`` driver prefix.
     """
     url = get_database_url()
-    if url.startswith("sqlite"):
-        raise RuntimeError(
-            "get_psycopg_conninfo requires PostgreSQL; DATABASE_URL must not be sqlite."
-        )
     for prefix in ("postgresql+psycopg2://", "postgresql+asyncpg://"):
         if url.startswith(prefix):
             rest = url.split("://", 1)[1]
             return f"postgresql://{rest}"
-    if url.startswith(("postgresql://", "postgres://")):
+    if url.startswith("postgresql://"):
         return url
     raise RuntimeError(
-        "DATABASE_URL must be a PostgreSQL URI (postgresql:// or postgres://)."
+        "DATABASE_URL must be a postgresql:// URI "
+        "(optional +asyncpg or +psycopg2 driver prefix only)."
     )
 
 

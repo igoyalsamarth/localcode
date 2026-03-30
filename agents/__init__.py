@@ -1,1 +1,1 @@
-"""LangGraph / deep-agent definitions."""
+"""Deep-agent helpers and GitHub coder/reviewer runners."""

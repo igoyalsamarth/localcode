@@ -2,7 +2,8 @@
 Deep-agent GitHub coder: clones repos, implements issues, opens PRs.
 
 Invoked via `run_agent_on_issue` (e.g. from `services.github.coder_workflow`).
-Uses a stable ``thread_id`` per issue for logging and usage rows (checkpointing disabled).
+Uses a stable workflow ``run_id`` (repo + issue number) for usage rows, stream config,
+and Daytona labels; the usage table's primary key is unique per execution.
 
 When ``DAYTONA_API_KEY`` is set, execution uses a `Daytona`_ remote sandbox (``langchain-daytona``);
 otherwise the local ``LocalShellBackend`` virtual filesystem under ``./workspace``.
@@ -17,7 +18,6 @@ from pathlib import Path
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 
-from agents.checkpoint import github_issue_workflow_thread_id
 from agents.deep_agent_stream import stream_deep_agent
 from agents.github_llm import get_github_deep_agent_llm
 from agents.usage_callback import AgentLlmUsageCallbackHandler
@@ -33,6 +33,7 @@ from services.github.agent_daytona import (
     create_daytona_agent_session,
     stop_sandbox,
 )
+from services.github.workflow_run_id import github_issue_workflow_run_id
 from services.github.workflow_usage import record_issue_workflow_usage
 from services.github.installation_token import (
     get_installation_token_for_repo,
@@ -143,7 +144,7 @@ def run_agent_on_issue(
     ``greagent:in-progress`` by the webhook). Clones the repo, implements, opens a PR,
     and comments; the HTTP layer sets ``greagent:done`` or ``greagent:error`` afterward.
 
-    ``thread_id`` = ``github:{owner}/{repo}#issue-{n}`` is recorded on the workflow usage row.
+    ``run_id`` is ``github:{owner}/{repo}#issue-{n}`` (see :mod:`services.github.workflow_run_id`).
     """
     token_value = access_token or get_installation_token_for_repo(
         issue.owner,
@@ -198,12 +199,12 @@ Please implement the requested changes:
 9. Comment on the issue that the PR was opened and include the PR link.
 
 """
-    thread_id = github_issue_workflow_thread_id(issue.full_name, issue.issue_number)
+    run_id = github_issue_workflow_run_id(issue.full_name, issue.issue_number)
     usage_cb = AgentLlmUsageCallbackHandler()
     llm = get_github_deep_agent_llm()
     llm.callbacks = [usage_cb]
     stream_config: dict = {
-        "configurable": {"thread_id": thread_id},
+        "configurable": {"thread_id": run_id},
         "callbacks": [usage_cb],
     }
 
@@ -211,8 +212,8 @@ Please implement the requested changes:
     try:
         if use_daytona:
             logger.info(
-                "GitHub coder using Daytona sandbox (thread_id=%s)",
-                thread_id,
+                "GitHub coder using Daytona sandbox (run_id=%s)",
+                run_id,
             )
             env_vars = build_sandbox_env_vars(
                 token_value,
@@ -222,7 +223,7 @@ Please implement the requested changes:
                 sandbox_home=sandbox_home,
             )
             backend, session = create_daytona_agent_session(
-                thread_id, env_vars, sandbox_home=sandbox_home
+                run_id, env_vars, sandbox_home=sandbox_home
             )
             daytona_session = session
             agent = create_github_coder_agent(backend, system_prompt=system_prompt)
@@ -250,7 +251,7 @@ Please implement the requested changes:
         stop_sandbox(daytona_session)
         record_issue_workflow_usage(
             issue,
-            thread_id,
+            run_id,
             usage_cb,
             provider=AGENT_LLM_PROVIDER,
         )
