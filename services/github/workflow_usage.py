@@ -1,5 +1,9 @@
 """
 Persist LLM token usage for GitHub deep-agent runs (issue code + PR review).
+
+Token counts and catalog rates yield an internal ``llm_cost_usd``. The persisted ``cost``
+and wallet debits both use :func:`services.wallet.usage_charge_usd_from_llm_cost` on that
+value so usage totals match what was charged.
 """
 
 from __future__ import annotations
@@ -15,7 +19,10 @@ from db import session_scope
 from logger import get_logger
 from model.enums import GitHubWorkflowKind
 from model.tables import AgentWorkflowUsage, Model, Repository
-from services.wallet import deduct_organization_wallet_for_llm_run
+from services.wallet import (
+    deduct_organization_wallet_for_llm_run,
+    usage_charge_usd_from_llm_cost,
+)
 from services.github.issue_payload import IssueOpenedForCoder
 from services.github.pr_payload import PROpenedForReview
 
@@ -56,10 +63,10 @@ def _sum_tokens(raw: dict[str, Any]) -> tuple[int, int, int]:
     return inp, out, inp + out
 
 
-def _compute_cost_and_catalog_model(
+def _compute_llm_cost_usd_and_catalog_model(
     session, provider: str, raw: dict[str, Any]
 ) -> tuple[Decimal, Model | None]:
-    """Sum cost using ``Model`` rates when a catalog row matches each model name."""
+    """Token-derived LLM spend (USD) from catalog ``Model`` rates (input before wallet formula)."""
     total = Decimal(0)
     first: Model | None = None
     for model_name, meta in raw.items():
@@ -111,12 +118,16 @@ def record_github_workflow_usage(
     try:
         with session_scope() as session:
             repo_id, org_id = _resolve_repo_by_owner_name(session, owner, repo_name)
-            cost, catalog_model = _compute_cost_and_catalog_model(session, provider, raw)
+            llm_cost_usd, catalog_model = _compute_llm_cost_usd_and_catalog_model(
+                session, provider, raw
+            )
+            # Same USD amount the wallet uses (and :func:`deduct_organization_wallet_for_llm_run`).
+            wallet_charge_usd = usage_charge_usd_from_llm_cost(llm_cost_usd)
 
             credits_charged = Decimal("0")
             if org_id is not None:
                 credits_charged = deduct_organization_wallet_for_llm_run(
-                    session, org_id, cost
+                    session, org_id, llm_cost_usd
                 )
 
             row = AgentWorkflowUsage(
@@ -125,7 +136,7 @@ def record_github_workflow_usage(
                 repository_id=repo_id,
                 github_full_name=github_full_name,
                 github_item_number=github_item_number,
-                langgraph_thread_id=thread_id,
+                workflow_thread_id=thread_id,
                 provider=provider,
                 model_name=model_label,
                 model_id=catalog_model.id if catalog_model else None,
@@ -133,7 +144,7 @@ def record_github_workflow_usage(
                 output_tokens=out,
                 total_tokens=total,
                 usage_by_model=serializable,
-                cost=cost,
+                cost=wallet_charge_usd,
                 credits_charged_usd=credits_charged,
             )
             session.add(row)

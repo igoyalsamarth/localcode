@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from agents.checkpoint import init_checkpointer, shutdown_checkpointer
 from db import create_tables
 from api import (
     health_router,
@@ -31,12 +30,10 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create DB tables and LangGraph checkpoint tables on startup."""
+    """Create DB tables on startup."""
     create_tables()
     logger.info("Database tables ensured")
-    init_checkpointer()
     yield
-    shutdown_checkpointer()
 
 
 app = FastAPI(

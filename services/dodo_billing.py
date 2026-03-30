@@ -160,8 +160,7 @@ def credit_wallet_for_subscription_renewal(session: Session, dodo_sub: object) -
 def credit_wallet_for_topup_payment(session: Session, payment: object) -> None:
     """Credit wallet when a one-off checkout was started as a wallet top-up."""
     meta = dict(getattr(payment, "metadata", None) or {})
-    flag = str(meta.get("greagent_wallet_topup", "")).lower()
-    if flag not in ("1", "true", "yes"):
+    if meta.get("greagent_wallet_topup") != "true":
         return
     org_s = meta.get("greagent_organization_id")
     if not org_s:

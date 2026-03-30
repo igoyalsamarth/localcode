@@ -351,7 +351,7 @@ class AgentWorkflowUsage(Base):
     )
     github_full_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     github_item_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    langgraph_thread_id: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
+    workflow_thread_id: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
     provider: Mapped[str] = mapped_column(String(64), nullable=False, default="ollama")
     model_name: Mapped[str] = mapped_column(
         String(256),
@@ -367,9 +367,17 @@ class AgentWorkflowUsage(Base):
     output_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     usage_by_model: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    cost: Mapped[Decimal] = mapped_column(Numeric(18, 8), default=0, nullable=False)
+    cost: Mapped[Decimal] = mapped_column(
+        Numeric(18, 8),
+        default=0,
+        nullable=False,
+        doc="Billed amount (USD): same as wallet debit formula on token-derived LLM cost.",
+    )
     credits_charged_usd: Mapped[Decimal] = mapped_column(
-        Numeric(18, 8), nullable=False, default=Decimal("0")
+        Numeric(18, 8),
+        nullable=False,
+        default=Decimal("0"),
+        doc="Actually debited from the org wallet (0 if no organization on the row).",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

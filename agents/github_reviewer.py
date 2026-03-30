@@ -2,8 +2,7 @@
 Deep-agent GitHub reviewer: clones repos, checks out PR branches, reviews code changes.
 
 Invoked via `run_agent_on_pr` (e.g. from `services.github.review_workflow`).
-Uses LangGraph checkpointing (PostgreSQL via ``db.client.get_psycopg_conninfo()``) with a
-stable ``thread_id`` per PR (see LangGraph persistence / threads docs).
+Uses a stable ``thread_id`` per PR for logging and usage rows (checkpointing disabled).
 
 When ``DAYTONA_API_KEY`` is set, execution uses a `Daytona`_ remote sandbox (``langchain-daytona``);
 otherwise the local ``LocalShellBackend`` virtual filesystem under ``./workspace``.
@@ -19,7 +18,7 @@ from pathlib import Path
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 
-from agents.checkpoint import get_checkpointer, github_pr_workflow_thread_id
+from agents.checkpoint import github_pr_workflow_thread_id
 from agents.deep_agent_stream import stream_deep_agent
 from agents.github_llm import get_github_deep_agent_llm
 from agents.reviewer_tools import add_inline_review_comment
@@ -130,7 +129,6 @@ def create_github_reviewer_agent(backend: object, *, system_prompt: str) -> obje
         model=get_github_deep_agent_llm(),
         system_prompt=system_prompt,
         backend=backend,
-        checkpointer=get_checkpointer(),
         tools=[add_inline_review_comment],
     )
 
@@ -145,8 +143,7 @@ def run_agent_on_pr(
     mode, or ``labeled`` with ``greagent:review`` for an explicit run or rerun). Clones
     the repo, checks out the branch, reviews changes, comments, and approves if all looks good.
 
-    Checkpoints are keyed by ``thread_id`` = ``github:{owner}/{repo}#pr-{n}`` so the
-    same PR run can be resumed or replayed from stored LangGraph state.
+    ``thread_id`` = ``github:{owner}/{repo}#pr-{n}`` is recorded on the workflow usage row.
     """
     token_value = access_token or get_installation_token_for_repo(
         pr.owner,

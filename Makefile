@@ -31,11 +31,10 @@ dev-infra:
 	@echo "Starting RabbitMQ..."
 	docker run -d --name greagent-rabbitmq \
 		-p 5672:5672 \
-		-p 15672:15672 \
-		rabbitmq:3.13-management-alpine || true
+		rabbitmq:3.13-alpine || true
 	@echo ""
 	@echo "Infrastructure started!"
-	@echo "RabbitMQ UI: http://localhost:15672 (guest/guest)"
+	@echo "RabbitMQ: amqp://guest:guest@localhost:5672/ (no web UI; use rabbitmqctl via docker exec if needed)"
 	@echo ""
 	@echo "Note: Using cloud-hosted PostgreSQL from .env"
 
@@ -55,7 +54,7 @@ docker-up:
 	@echo ""
 	@echo "Services started!"
 	@echo "API Backend (with webhooks): http://localhost:8000"
-	@echo "RabbitMQ UI: http://localhost:15672"
+	@echo "RabbitMQ AMQP: localhost:5672 (guest/guest)"
 	@echo ""
 	@echo "Note: Using cloud-hosted PostgreSQL from .env"
 

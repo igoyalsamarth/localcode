@@ -2,8 +2,7 @@
 Deep-agent GitHub coder: clones repos, implements issues, opens PRs.
 
 Invoked via `run_agent_on_issue` (e.g. from `services.github.coder_workflow`).
-Uses LangGraph checkpointing (PostgreSQL via ``db.client.get_psycopg_conninfo()``) with a
-stable ``thread_id`` per issue (see LangGraph persistence / threads docs).
+Uses a stable ``thread_id`` per issue for logging and usage rows (checkpointing disabled).
 
 When ``DAYTONA_API_KEY`` is set, execution uses a `Daytona`_ remote sandbox (``langchain-daytona``);
 otherwise the local ``LocalShellBackend`` virtual filesystem under ``./workspace``.
@@ -18,7 +17,7 @@ from pathlib import Path
 from deepagents import create_deep_agent
 from deepagents.backends import LocalShellBackend
 
-from agents.checkpoint import get_checkpointer, github_issue_workflow_thread_id
+from agents.checkpoint import github_issue_workflow_thread_id
 from agents.deep_agent_stream import stream_deep_agent
 from agents.github_llm import get_github_deep_agent_llm
 from agents.usage_callback import AgentLlmUsageCallbackHandler
@@ -131,7 +130,6 @@ def create_github_coder_agent(backend: object, *, system_prompt: str) -> object:
         model=get_github_deep_agent_llm(),
         system_prompt=system_prompt,
         backend=backend,
-        checkpointer=get_checkpointer(),
     )
 
 
@@ -145,8 +143,7 @@ def run_agent_on_issue(
     ``greagent:in-progress`` by the webhook). Clones the repo, implements, opens a PR,
     and comments; the HTTP layer sets ``greagent:done`` or ``greagent:error`` afterward.
 
-    Checkpoints are keyed by ``thread_id`` = ``github:{owner}/{repo}#issue-{n}`` so the
-    same issue run can be resumed or replayed from stored LangGraph state.
+    ``thread_id`` = ``github:{owner}/{repo}#issue-{n}`` is recorded on the workflow usage row.
     """
     token_value = access_token or get_installation_token_for_repo(
         issue.owner,

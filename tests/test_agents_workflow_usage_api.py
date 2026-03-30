@@ -64,7 +64,7 @@ class TestAgentsWorkflowUsageAPI:
                     repository_id=repo.id,
                     github_full_name="acme/svc",
                     github_item_number=item,
-                    langgraph_thread_id=f"thread-{workflow}-{item}",
+                    workflow_thread_id=f"thread-{workflow}-{item}",
                     provider="ollama",
                     model_name="m1",
                     input_tokens=in_tok,

@@ -8,7 +8,6 @@ PR workflow (``greagent:review`` / auto on sync), with Dramatiq workers processi
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
-from agents.checkpoint import init_checkpointer, shutdown_checkpointer
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -31,15 +30,13 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create DB tables and LangGraph checkpoint tables on startup."""
+    """Create DB tables on startup."""
     create_tables()
     logger.info("Database tables ensured")
     with session_scope() as session:
         get_or_create_default_model(session)
     logger.info("Default LLM catalog model ensured")
-    init_checkpointer()
     yield
-    shutdown_checkpointer()
 
 
 app = FastAPI(

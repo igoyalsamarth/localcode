@@ -175,6 +175,30 @@ class TestDodoBillingSync:
         db_session.refresh(org)
         assert org.wallet_balance_usd == Decimal("5.00")
 
+    def test_payment_succeeded_topup_ignores_noncanonical_flag(self, db_session):
+        """Only ``greagent_wallet_topup: \"true\"`` credits the wallet (no alternate spellings)."""
+        user = User(email="t2@example.com", auth_provider="github")
+        db_session.add(user)
+        db_session.flush()
+        org = Organization(name="T2", owner_user_id=user.id)
+        db_session.add(org)
+        db_session.commit()
+
+        payment = SimpleNamespace(
+            metadata={
+                "greagent_organization_id": str(org.id),
+                "greagent_wallet_topup": "1",
+            },
+            total_amount=500,
+        )
+        event = SimpleNamespace(type="payment.succeeded", data=payment)
+
+        apply_unwrapped_webhook_event(db_session, event)
+        db_session.commit()
+
+        db_session.refresh(org)
+        assert org.wallet_balance_usd == Decimal("0")
+
 
 @pytest.mark.unit
 class TestBillingWebhookDelivery:

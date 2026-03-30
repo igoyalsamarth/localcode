@@ -1,4 +1,4 @@
-"""Tests for ``workflow_usage`` persistence (patched DB session, no LangGraph)."""
+"""Tests for ``workflow_usage`` persistence (patched DB session)."""
 
 from contextlib import contextmanager
 from decimal import Decimal
@@ -89,7 +89,8 @@ class TestWorkflowUsageRecord:
         assert row.output_tokens == 4
         assert row.organization_id == org.id
         assert row.repository_id == repo.id
-        assert row.cost == Decimal("11")
+        # Token LLM cost = 3*1 + 4*2 = 11; wallet charge = (11+0.02)/0.5 rounded up to cents, min 0.05
+        assert row.cost == Decimal("22.04")
         assert row.credits_charged_usd == Decimal("22.04")
         db_session.refresh(org)
         assert org.wallet_balance_usd == Decimal("-22.04")

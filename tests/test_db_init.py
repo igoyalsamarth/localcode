@@ -25,32 +25,52 @@ class TestDatabaseInit:
     def test_create_tables_calls_create_all(self, mock_env):
         """Test create_tables calls Base.metadata.create_all."""
         from db import create_tables, Base
-        
-        with patch("db.get_engine") as mock_get_engine:
-            mock_engine = MagicMock()
-            mock_get_engine.return_value = mock_engine
-            
+
+        mock_engine = MagicMock()
+        mock_engine.dialect.name = "postgresql"
+        mock_conn = MagicMock()
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = mock_conn
+        mock_cm.__exit__.return_value = None
+        mock_engine.connect.return_value = mock_cm
+
+        with patch("db.get_engine", return_value=mock_engine):
             with patch.object(Base.metadata, "create_all") as mock_create_all:
                 create_tables()
-                
-                # Verify create_all was called with an engine
+
                 mock_create_all.assert_called_once()
                 call_args = mock_create_all.call_args
-                assert "bind" in call_args.kwargs or len(call_args.args) > 0
+                assert call_args.kwargs.get("bind") is mock_conn
 
     def test_create_tables_registers_models_first(self, mock_env):
         """Test create_tables registers models before creating tables."""
         from db import create_tables
-        
+
+        mock_engine = MagicMock()
+        mock_engine.dialect.name = "postgresql"
+        mock_conn = MagicMock()
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = mock_conn
+        mock_cm.__exit__.return_value = None
+        mock_engine.connect.return_value = mock_cm
+
         with patch("db.register_models") as mock_register:
-            with patch("db.get_engine") as mock_get_engine:
-                mock_engine = MagicMock()
-                mock_get_engine.return_value = mock_engine
-                
+            with patch("db.get_engine", return_value=mock_engine):
                 with patch("db.Base.metadata.create_all"):
                     create_tables()
-                    
+
                     mock_register.assert_called_once()
+
+    def test_create_tables_rejects_non_postgresql(self, mock_env):
+        """Production schema bootstrap is PostgreSQL-only (no SQLite / dual-path DDL)."""
+        from db import create_tables
+
+        mock_engine = MagicMock()
+        mock_engine.dialect.name = "sqlite"
+
+        with patch("db.get_engine", return_value=mock_engine):
+            with pytest.raises(RuntimeError, match="PostgreSQL"):
+                create_tables()
 
     def test_exports_base(self):
         """Test that Base is exported."""

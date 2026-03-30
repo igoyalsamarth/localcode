@@ -18,11 +18,42 @@ def register_models() -> None:
 
 
 def create_tables() -> None:
-    """Create all tables. Call register_models() first if using outside server context."""
-    register_models()
-    from db.client import get_engine
+    """
+    Create all application tables on PostgreSQL.
 
-    Base.metadata.create_all(bind=get_engine())
+    Uses an advisory lock so parallel API/worker processes do not race on ``create_all`` —
+    the failure mode is most visible on a **fresh empty database** (DDL / ENUM / ``pg_type``
+    conflicts when every replica runs ``CREATE`` at once).
+    """
+    register_models()
+    from sqlalchemy import text
+
+    from db.pg_locks import PG_ADV_LOCK_SQLALCHEMY_CREATE_ALL
+
+    engine = get_engine()
+    if engine.dialect.name != "postgresql":
+        raise RuntimeError(
+            "create_tables() requires PostgreSQL (postgresql:// DATABASE_URL). "
+            "Unit tests must patch db.get_engine with a PostgreSQL dialect mock."
+        )
+
+    with engine.connect() as conn:
+        conn.execute(
+            text("SELECT pg_advisory_lock(:k)"),
+            {"k": PG_ADV_LOCK_SQLALCHEMY_CREATE_ALL},
+        )
+        try:
+            Base.metadata.create_all(bind=conn)
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            conn.execute(
+                text("SELECT pg_advisory_unlock(:k)"),
+                {"k": PG_ADV_LOCK_SQLALCHEMY_CREATE_ALL},
+            )
+            conn.commit()
 
 
 __all__ = [

@@ -19,7 +19,7 @@ OLLAMA_TIMEOUT_SEC = int(os.environ.get("OLLAMA_TIMEOUT_SEC", "120"))
 
 def get_agent_model_name() -> str:
     """Default / configured LLM id for GitHub deep agents (``MODEL`` env)."""
-    return os.environ.get("MODEL", "kimi-k2.5")
+    return os.environ.get("MODEL", "kimi-k2.5:cloud")
 
 
 def default_catalog_model_spec() -> tuple[str, str, Decimal, Decimal]:
@@ -41,7 +41,7 @@ def default_catalog_model_spec() -> tuple[str, str, Decimal, Decimal]:
 
 def get_database_url() -> str:
     """
-    PostgreSQL ``DATABASE_URL`` for the app (SQLAlchemy) and LangGraph checkpoints.
+    PostgreSQL ``DATABASE_URL`` for the app (SQLAlchemy).
 
     Same value as used by ``db.client`` — single source of truth.
     """
@@ -75,12 +75,16 @@ SIGNUP_PROMO_DURATION_DAYS = int(os.environ.get("SIGNUP_PROMO_DURATION_DAYS", "3
 
 # Dodo Payments (checkout + webhooks). Keys must never be exposed to the browser.
 DODO_PAYMENTS_API_KEY = os.environ.get("DODO_PAYMENTS_API_KEY", "").strip()
-DODO_PAYMENTS_ENVIRONMENT = os.environ.get("DODO_PAYMENTS_ENVIRONMENT", "test_mode").strip()
+DODO_PAYMENTS_ENVIRONMENT = os.environ.get(
+    "DODO_PAYMENTS_ENVIRONMENT", "test_mode"
+).strip()
 DODO_PAYMENTS_WEBHOOK_KEY = os.environ.get("DODO_PAYMENTS_WEBHOOK_KEY", "").strip()
 # Product id from Dodo dashboard (e.g. pdt_...) for the paid “Ship Goblin” plan.
 DODO_PRODUCT_ID_SHIP_GOBLIN = os.environ.get("DODO_PRODUCT_ID_SHIP_GOBLIN", "").strip()
 # One-time product for wallet top-up (hosted checkout).
-DODO_PRODUCT_ID_WALLET_TOPUP = os.environ.get("DODO_PRODUCT_ID_WALLET_TOPUP", "").strip()
+DODO_PRODUCT_ID_WALLET_TOPUP = os.environ.get(
+    "DODO_PRODUCT_ID_WALLET_TOPUP", ""
+).strip()
 
 # Session JWT (issued after GitHub OAuth user login; used as API Bearer token)
 JWT_SECRET = os.environ.get("JWT_SECRET", "").strip()

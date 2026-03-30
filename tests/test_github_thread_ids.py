@@ -1,4 +1,4 @@
-"""Tests for stable LangGraph thread id helpers."""
+"""Tests for stable GitHub workflow thread id helpers."""
 
 import pytest
 

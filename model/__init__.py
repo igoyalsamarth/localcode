@@ -48,7 +48,7 @@ __all__ = [
     "RepositoryAgent",
     "Subscription",
     "User",
-    # Tables (aliased to avoid collision with schema names)
+    # ORM table classes (aliases avoid clashing with Pydantic schema class names above)
     "AgentTable",
     "AgentWorkflowUsageTable",
     "GitHubInstallationTable",

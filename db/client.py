@@ -25,18 +25,15 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 def get_psycopg_conninfo() -> str:
     """
-    Connection URI for psycopg3 / LangGraph :class:`~langgraph.checkpoint.postgres.PostgresSaver`.
+    Normalized ``postgresql://`` URI for psycopg3 (same host/credentials as SQLAlchemy).
 
-    Reuses the same database host and credentials as SQLAlchemy but normalizes the URL to
-    libpq ``postgresql://`` form (LangGraph does not use SQLAlchemy drivers).
-
-    See `Persistence <https://docs.langchain.com/oss/python/langgraph/persistence>`_ and
-    `Add memory (Postgres) <https://docs.langchain.com/oss/python/langgraph/add-memory>`_.
+    Strips SQLAlchemy driver prefixes (e.g. ``+asyncpg``, ``+psycopg2``) so libpq-based
+    clients can reuse ``DATABASE_URL``.
     """
     url = get_database_url()
     if url.startswith("sqlite"):
         raise RuntimeError(
-            "LangGraph checkpointing requires PostgreSQL; DATABASE_URL must not be sqlite."
+            "get_psycopg_conninfo requires PostgreSQL; DATABASE_URL must not be sqlite."
         )
     for prefix in ("postgresql+psycopg2://", "postgresql+asyncpg://"):
         if url.startswith(prefix):
