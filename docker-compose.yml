@@ -27,7 +27,6 @@ services:
       - "8000:8000"
     environment:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
     env_file:
       - .env
     depends_on:
@@ -36,8 +35,6 @@ services:
     networks:
       - greagent-network
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
   worker:
     build:
@@ -46,7 +43,6 @@ services:
     command: uv run worker
     environment:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
     env_file:
       - .env
     depends_on:
@@ -57,8 +53,6 @@ services:
     restart: unless-stopped
     deploy:
       replicas: 2
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
 
 networks:
   greagent-network:

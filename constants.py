@@ -12,7 +12,10 @@ _DEFAULT_LLM_OUTPUT_USD_PER_MILLION = Decimal("3.00")
 # LLM billing provider string stored on usage rows (Ollama, OpenAI, etc.)
 AGENT_LLM_PROVIDER = os.environ.get("AGENT_LLM_PROVIDER", "ollama")
 
-OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+# Hosted API default (https://github.com/ollama/ollama-python). Override for self-hosted,
+# e.g. OLLAMA_BASE_URL=http://localhost:11434 and leave OLLAMA_API_KEY unset.
+OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "https://ollama.com").rstrip("/")
+OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "").strip()
 OLLAMA_MAX_RETRIES = int(os.environ.get("OLLAMA_MAX_RETRIES", "10"))
 OLLAMA_TIMEOUT_SEC = int(os.environ.get("OLLAMA_TIMEOUT_SEC", "120"))
 

@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from constants import (
     AGENT_LLM_PROVIDER,
+    OLLAMA_API_KEY,
     OLLAMA_BASE_URL,
     daytona_sandbox_enabled,
     daytona_sandbox_home,
@@ -179,6 +180,10 @@ class TestConstants:
         """Test Ollama base URL constant."""
         assert isinstance(OLLAMA_BASE_URL, str)
         assert OLLAMA_BASE_URL.startswith("http")
+
+    def test_ollama_api_key_is_string(self):
+        """OLLAMA_API_KEY is always a str (empty when unset)."""
+        assert isinstance(OLLAMA_API_KEY, str)
 
     def test_github_rest_api_version(self):
         """Test GitHub REST API version constant."""

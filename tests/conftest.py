@@ -80,6 +80,7 @@ def mock_env():
         "GITHUB_APP_PRIVATE_KEY": "test_key",
         "MODEL": "test-model",
         "OLLAMA_BASE_URL": "http://localhost:11434",
+        "OLLAMA_API_KEY": "",
         "RABBITMQ_URL": "amqp://guest:guest@localhost:5672/",
         "LOG_LEVEL": "INFO",
         "JWT_SECRET": "test-jwt-secret-at-least-32-characters-long",
