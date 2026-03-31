@@ -213,5 +213,15 @@ jobs:
               echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
             fi
             export GRAGENT_IMAGE
+            export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-greagent}"
+            docker_rm_matching() {
+              ids=$(docker ps -aq --filter "$1" 2>/dev/null || true)
+              if [ -n "$ids" ]; then docker rm -f $ids; fi
+            }
             run_compose -f docker-compose.prod.yml pull api-backend worker
+            run_compose -f docker-compose.prod.yml stop -t 30 api-backend worker 2>/dev/null || true
+            run_compose -f docker-compose.prod.yml rm -f api-backend worker 2>/dev/null || true
+            docker_rm_matching "name=greagent-api-backend"
+            docker_rm_matching "name=greagent-worker"
+            docker_rm_matching "name=app_worker"
             run_compose -f docker-compose.prod.yml up -d --remove-orphans

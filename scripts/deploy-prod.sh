@@ -30,5 +30,23 @@ run_compose() {
 }
 
 export GRAGENT_IMAGE
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-greagent}"
+
+docker_rm_matching() {
+  local ids
+  ids=$(docker ps -aq --filter "$1" 2>/dev/null || true)
+  if [ -n "$ids" ]; then
+    # shellcheck disable=SC2086
+    docker rm -f $ids
+  fi
+}
+
+# Pull, then replace app containers without relying on in-place "recreate" (avoids name conflicts).
 run_compose -f docker-compose.prod.yml pull api-backend worker
+run_compose -f docker-compose.prod.yml stop -t 30 api-backend worker 2>/dev/null || true
+run_compose -f docker-compose.prod.yml rm -f api-backend worker 2>/dev/null || true
+docker_rm_matching "name=greagent-api-backend"
+docker_rm_matching "name=greagent-worker"
+docker_rm_matching "name=app_worker"
+
 run_compose -f docker-compose.prod.yml up -d --remove-orphans

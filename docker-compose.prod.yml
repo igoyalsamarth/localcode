@@ -42,6 +42,7 @@ services:
 
   worker:
     image: ${GRAGENT_IMAGE:?Set GRAGENT_IMAGE to the full ghcr.io/... reference}
+    container_name: greagent-worker
     command: uv run worker
     environment:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
