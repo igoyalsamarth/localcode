@@ -121,6 +121,10 @@ jobs:
       contents: read
       packages: write
 
+    outputs:
+      # Same tag as docker/metadata-action type=sha,prefix=sha- (short SHA)
+      image_ref: ${{ steps.deploy-ref.outputs.image }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -160,3 +164,46 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Image ref for deploy (pinned to this commit)
+        id: deploy-ref
+        run: |
+          short=$(echo '${{ github.sha }}' | cut -c1-7)
+          echo "image=ghcr.io/${{ steps.image.outputs.name }}:sha-${short}" >> "$GITHUB_OUTPUT"
+
+  # Configure secrets on the repo or the "production" environment:
+  #   DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_PATH (absolute path to dir with docker-compose.prod.yml + .env)
+  # Optional (private GHCR): GHCR_PULL_USER + GHCR_PULL_TOKEN (PAT with read:packages)
+  # Non-default SSH port: set DEPLOY_HOST to "host:port" (see appleboy/ssh-action docs)
+  deploy:
+    name: Deploy to server (SSH)
+    runs-on: ubuntu-latest
+    needs: [publish-image]
+    if: >
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: Pull and restart on host
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          GRAGENT_IMAGE: ${{ needs.publish-image.outputs.image_ref }}
+          GHCR_USER: ${{ secrets.GHCR_PULL_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          command_timeout: 15m
+          envs: DEPLOY_PATH,GRAGENT_IMAGE,GHCR_USER,GHCR_TOKEN
+          script: |
+            set -eo pipefail
+            cd "$DEPLOY_PATH"
+            if [ -n "${GHCR_TOKEN:-}" ] && [ -n "${GHCR_USER:-}" ]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+            fi
+            export GRAGENT_IMAGE
+            docker compose -f docker-compose.prod.yml pull api-backend worker
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
