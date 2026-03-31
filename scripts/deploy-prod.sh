@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pull latest images from GHCR and recreate app containers.
-# Requires: Docker, docker compose plugin, .env with app secrets, and GRAGENT_IMAGE set
+# Requires: Docker, Compose (docker compose plugin or docker-compose), .env, and GRAGENT_IMAGE
 # (e.g. in .env: GRAGENT_IMAGE=ghcr.io/org/gragent-be:latest).
 #
 # Private GHCR: docker login ghcr.io -u USER -p <PAT with read:packages>
@@ -19,6 +19,17 @@ if [[ -z "${GRAGENT_IMAGE:-}" ]]; then
   exit 1
 fi
 
+run_compose() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    docker-compose "$@"
+  else
+    echo "Need Docker Compose v2 (docker compose) or docker-compose v1 on PATH." >&2
+    exit 1
+  fi
+}
+
 export GRAGENT_IMAGE
-docker compose -f docker-compose.prod.yml pull api-backend worker
-docker compose -f docker-compose.prod.yml up -d --remove-orphans
+run_compose -f docker-compose.prod.yml pull api-backend worker
+run_compose -f docker-compose.prod.yml up -d --remove-orphans
