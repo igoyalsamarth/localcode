@@ -1,0 +1,58 @@
+# Production / CD: pull pre-built images from GHCR (built in GitHub Actions).
+# Copy or symlink .env from your secrets; set GRAGENT_IMAGE to the tag you want, e.g.
+#   GRAGENT_IMAGE=ghcr.io/your-org/gragent-be:latest
+#   GRAGENT_IMAGE=ghcr.io/your-org/gragent-be:sha-abc1234
+#
+# Run: docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+# Or: ./scripts/deploy-prod.sh
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    container_name: greagent-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - greagent-network
+    restart: unless-stopped
+
+  api-backend:
+    image: ${GRAGENT_IMAGE:?Set GRAGENT_IMAGE to the full ghcr.io/... reference}
+    container_name: greagent-api-backend
+    command: uv run api-backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    env_file:
+      - .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - greagent-network
+    restart: unless-stopped
+
+  worker:
+    image: ${GRAGENT_IMAGE:?Set GRAGENT_IMAGE to the full ghcr.io/... reference}
+    command: uv run worker
+    environment:
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    env_file:
+      - .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - greagent-network
+    restart: unless-stopped
+
+networks:
+  greagent-network:
+    driver: bridge
