@@ -19,6 +19,7 @@ from api import (
     connections_router,
     agents_router,
     billing_router,
+    dashboard_router,
 )
 from api.wh import github_router
 from logger import get_logger
@@ -62,4 +63,5 @@ app.include_router(onboarding_router)
 app.include_router(connections_router)
 app.include_router(agents_router)
 app.include_router(billing_router)
+app.include_router(dashboard_router)
 app.include_router(github_router)
