@@ -161,7 +161,6 @@ class TestModels:
             organization_id=org.id,
             name="Test Agent",
             type=AgentType.code,
-            price_monthly=Decimal("99.99"),
         )
         db_session.add(agent)
         db_session.commit()

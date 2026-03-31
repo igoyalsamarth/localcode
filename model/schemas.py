@@ -155,7 +155,6 @@ class AgentBase(BaseModel):
     organization_id: UUID
     name: str
     type: AgentType
-    price_monthly: Decimal | None = None
 
 
 class AgentCreate(AgentBase):

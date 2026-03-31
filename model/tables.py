@@ -266,7 +266,6 @@ class Agent(Base):
         Enum(AgentType, native_enum=False, length=16),
         nullable=False,
     )
-    price_monthly: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     organization: Mapped["Organization"] = relationship(
