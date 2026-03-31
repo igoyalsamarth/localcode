@@ -3,6 +3,7 @@
 #   GRAGENT_IMAGE=ghcr.io/your-org/gragent-be:latest
 #   GRAGENT_IMAGE=ghcr.io/your-org/gragent-be:sha-abc1234
 #
+# Use `docker compose` (v2+ plugin; v5.x is fine). Do not use legacy `docker-compose` 1.x with these images.
 # Run: docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
 # Or: ./scripts/deploy-prod.sh
 

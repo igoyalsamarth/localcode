@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pull latest images from GHCR and recreate app containers.
-# Requires: Docker, Compose (docker compose plugin or docker-compose), .env, and GRAGENT_IMAGE
+# Requires: `docker compose` (Compose v2+ as a CLI plugin). Legacy `docker-compose` 1.x is unsupported.
 # (e.g. in .env: GRAGENT_IMAGE=ghcr.io/org/gragent-be:latest).
 #
 # Private GHCR: docker login ghcr.io -u USER -p <PAT with read:packages>
@@ -22,12 +22,11 @@ fi
 run_compose() {
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"
-  elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose "$@"
-  else
-    echo "Need Docker Compose v2 (docker compose) or docker-compose v1 on PATH." >&2
-    exit 1
+    return
   fi
+  echo "Missing \`docker compose\` (Compose v2+ plugin). Install e.g. from Docker's apt repo" >&2
+  echo "or https://github.com/docker/compose/releases (docker-compose-linux-\$(uname -m) → cli-plugins)." >&2
+  exit 1
 }
 
 export GRAGENT_IMAGE
