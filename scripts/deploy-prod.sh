@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Pull latest images from GHCR and recreate app containers.
+# Pull images and recreate the prod stack (api, worker, rabbitmq).
+# Uses fixed container_name values; removes them by name first to avoid conflicts when
+# COMPOSE_PROJECT_NAME changes or a previous deploy left orphans.
 # Requires: `docker compose` (Compose v2+ as a CLI plugin). Legacy `docker-compose` 1.x is unsupported.
 # (e.g. in .env: GRAGENT_IMAGE=ghcr.io/org/gragent-be:latest).
 #
@@ -41,10 +43,12 @@ docker_rm_matching() {
   fi
 }
 
-# Pull, then replace app containers without relying on in-place "recreate" (avoids name conflicts).
-run_compose -f docker-compose.prod.yml pull api-backend worker
-run_compose -f docker-compose.prod.yml stop -t 30 api-backend worker 2>/dev/null || true
-run_compose -f docker-compose.prod.yml rm -f api-backend worker 2>/dev/null || true
+run_compose -f docker-compose.prod.yml pull rabbitmq api-backend worker
+
+# Drop old instances by name (survives project renames e.g. app → greagent; avoids recreate conflicts).
+docker stop -t 30 greagent-rabbitmq greagent-api-backend greagent-worker 2>/dev/null || true
+docker rm -f greagent-rabbitmq greagent-api-backend greagent-worker 2>/dev/null || true
+docker_rm_matching "name=greagent-rabbitmq"
 docker_rm_matching "name=greagent-api-backend"
 docker_rm_matching "name=greagent-worker"
 docker_rm_matching "name=app_worker"
