@@ -9,6 +9,7 @@ from services.github.greagent_labels import (
     ERROR,
     REVIEW,
     REVIEWED,
+    REVIEWING,
 )
 
 
@@ -40,6 +41,10 @@ class TestGreagentLabels:
         """Test REVIEWED label constant."""
         assert REVIEWED == "greagent:reviewed"
 
+    def test_reviewing_label(self):
+        """Test REVIEWING label constant."""
+        assert REVIEWING == "greagent:reviewing"
+
     def test_all_labels_are_strings(self):
         """Test all labels are strings."""
         assert isinstance(CODE, str)
@@ -48,6 +53,7 @@ class TestGreagentLabels:
         assert isinstance(ERROR, str)
         assert isinstance(REVIEW, str)
         assert isinstance(REVIEWED, str)
+        assert isinstance(REVIEWING, str)
 
     def test_labels_have_greagent_prefix(self):
         """Test all labels have greagent prefix."""
@@ -57,3 +63,4 @@ class TestGreagentLabels:
         assert ERROR.startswith("greagent:")
         assert REVIEW.startswith("greagent:")
         assert REVIEWED.startswith("greagent:")
+        assert REVIEWING.startswith("greagent:")

@@ -141,7 +141,8 @@ def run_agent_on_pr(
 ) -> None:
     """
     Run the GitHub review agent for a triggered PR (``opened`` / ``synchronize`` in auto
-    mode, or ``labeled`` with ``greagent:review`` for an explicit run or rerun). Clones
+    mode, or ``labeled`` with ``greagent:review`` for an explicit run or rerun). The webhook
+    prepare step sets ``greagent:reviewing`` before this runs. Clones
     the repo, checks out the branch, reviews changes, comments, and approves if all looks good.
 
     ``run_id`` is ``github:{owner}/{repo}#pr-{n}`` (see :mod:`services.github.workflow_run_id`).

@@ -12,7 +12,7 @@ from services.github.client import (
     ensure_repo_label_exists,
     remove_pr_label,
 )
-from services.github.greagent_labels import ERROR, REVIEW, REVIEWED
+from services.github.greagent_labels import ERROR, REVIEW, REVIEWED, REVIEWING
 from services.github.installation_token import (
     get_api_token_for_repo,
     get_installation_token_for_repo,
@@ -28,28 +28,30 @@ def ensure_greagent_review_labels_on_repository(
     *,
     access_token: str | None = None,
 ) -> None:
-    """Create the ``greagent:review``, ``greagent:reviewed``, and ``greagent:error`` labels on the repo if they are missing."""
+    """Create PR review labels (queue, in-progress, outcome) on the repo if they are missing."""
     tok = (
         access_token
         if access_token is not None
         else get_api_token_for_repo(owner, repo_name)
     )
 
-    for name in (REVIEW, REVIEWED, ERROR):
+    for name in (REVIEW, REVIEWING, REVIEWED, ERROR):
         ensure_repo_label_exists(owner, repo_name, tok, name)
 
 
 def _ensure_greagent_review_labels_exist(
     work: PROpenedForReview, access_token: str
 ) -> None:
-    """Create greagent:review* labels on the repo if they are missing."""
-    for name in (REVIEW, REVIEWED, ERROR):
+    """Create greagent PR review labels on the repo if they are missing."""
+    for name in (REVIEW, REVIEWING, REVIEWED, ERROR):
         ensure_repo_label_exists(work.owner, work.repo_name, access_token, name)
 
 
 def _transition_review_to_reviewed(work: PROpenedForReview, access_token: str) -> None:
-    """Replace ``greagent:review`` with ``greagent:reviewed``."""
+    """Clear queue/in-progress labels and set ``greagent:reviewed``."""
+    remove_pr_label(work.owner, work.repo_name, work.pr_number, ERROR, access_token)
     remove_pr_label(work.owner, work.repo_name, work.pr_number, REVIEW, access_token)
+    remove_pr_label(work.owner, work.repo_name, work.pr_number, REVIEWING, access_token)
     add_pr_labels(
         work.owner,
         work.repo_name,
@@ -60,8 +62,9 @@ def _transition_review_to_reviewed(work: PROpenedForReview, access_token: str) -
 
 
 def _transition_review_to_error(work: PROpenedForReview, access_token: str) -> None:
-    """Replace ``greagent:review`` with ``greagent:error``."""
+    """Clear queue/in-progress labels and set ``greagent:error``."""
     remove_pr_label(work.owner, work.repo_name, work.pr_number, REVIEW, access_token)
+    remove_pr_label(work.owner, work.repo_name, work.pr_number, REVIEWING, access_token)
     add_pr_labels(
         work.owner,
         work.repo_name,
@@ -73,7 +76,11 @@ def _transition_review_to_error(work: PROpenedForReview, access_token: str) -> N
 
 def prepare_pr_for_review_work(work: PROpenedForReview) -> None:
     """
-    Ensure labels exist before enqueueing the background agent run.
+    Ensure labels exist, then mark the PR as actively reviewing (``greagent:reviewing``).
+
+    Clears stale labels: drops ``greagent:error`` / ``greagent:reviewed``, removes the
+    trigger label ``greagent:review`` (manual or leftover), then applies ``greagent:reviewing`` so
+    the PR shows in-progress before the worker runs.
 
     Call this synchronously in the webhook before enqueueing the background agent run.
     """
@@ -83,6 +90,16 @@ def prepare_pr_for_review_work(work: PROpenedForReview) -> None:
         github_installation_id=work.github_installation_id,
     )
     _ensure_greagent_review_labels_exist(work, tok)
+    remove_pr_label(work.owner, work.repo_name, work.pr_number, ERROR, tok)
+    remove_pr_label(work.owner, work.repo_name, work.pr_number, REVIEWED, tok)
+    remove_pr_label(work.owner, work.repo_name, work.pr_number, REVIEW, tok)
+    add_pr_labels(
+        work.owner,
+        work.repo_name,
+        work.pr_number,
+        tok,
+        [REVIEWING],
+    )
 
 
 def run_review_agent_for_opened_pr(work: PROpenedForReview) -> None:

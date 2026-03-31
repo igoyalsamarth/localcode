@@ -2,6 +2,8 @@
 Map GitHub ``pull_request`` webhook payloads to review work items using DB state.
 
 - ``mode: auto`` (default): trigger on ``opened`` / ``synchronize`` (new commits).
+  The webhook prepare step sets ``greagent:reviewing`` (and clears stale outcome/queue labels)
+  so the PR shows in-progress before the worker runs.
 - Applying ``greagent:review`` (``labeled``) always starts a run when the agent is enabled,
   including in auto mode (explicit rerun).
 - ``mode: tag``: trigger only when ``greagent:review`` is applied — no auto run on open/sync.

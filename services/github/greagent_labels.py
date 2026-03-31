@@ -8,4 +8,5 @@ ERROR = "greagent:error"
 
 # Pull request workflow
 REVIEW = "greagent:review"
+REVIEWING = "greagent:reviewing"
 REVIEWED = "greagent:reviewed"

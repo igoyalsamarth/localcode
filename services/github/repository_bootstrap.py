@@ -179,7 +179,8 @@ def ensure_default_review_repository_agent(
     If there is no ``RepositoryAgent`` row for the org's review agent, create one:
     ``enabled=True``, ``config_json`` ``{\"mode\": \"auto\"}`` (``TRIGGER_MODE_AUTO``),
     same as the code agent — new PRs are reviewed automatically; ``greagent:review``
-    still triggers (or retriggers) a run when applied.
+    still triggers (or retriggers) a run when applied. While a run is active, the PR is
+    labeled ``greagent:reviewing``, then ``greagent:reviewed`` on success.
     """
     _ensure_repository_agent_link(
         session,
