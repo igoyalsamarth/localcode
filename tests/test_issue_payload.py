@@ -22,6 +22,13 @@ class TestIssuePayload:
         assert issue.issue_title == "Test Issue"
         assert issue.issue_body == "This is a test issue"
         assert issue.github_installation_id == 12345
+        assert issue.github_repo_id == 987_654_321
+
+    def test_from_github_issues_event_missing_repository_id(self, sample_github_issue_webhook):
+        """repository.id is required for per-repo agent locking."""
+        del sample_github_issue_webhook["repository"]["id"]
+        issue = IssueOpenedForCoder.from_github_issues_event(sample_github_issue_webhook)
+        assert issue is None
 
     def test_from_github_issues_event_missing_owner(self, sample_github_issue_webhook):
         """Test parsing issue webhook with missing owner."""
@@ -112,6 +119,7 @@ class TestIssuePayload:
             repo_name="repo",
             full_name="owner/repo",
             repo_url="https://github.com/owner/repo",
+            github_repo_id=42,
             issue_number=1,
             issue_title="Title",
         )
@@ -127,6 +135,7 @@ class TestIssuePayload:
             repo_name="repo",
             full_name="owner/repo",
             repo_url="https://github.com/owner/repo",
+            github_repo_id=42,
             issue_number=1,
             issue_title="Title",
             github_installation_id=99999,

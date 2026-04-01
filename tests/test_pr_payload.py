@@ -25,6 +25,12 @@ class TestPRPayload:
         assert pr.head_branch == "feature-branch"
         assert pr.head_sha == "abc123def456"
         assert pr.github_installation_id == 12345
+        assert pr.github_repo_id == 987_654_321
+
+    def test_from_github_pr_event_missing_repository_id(self, sample_github_pr_webhook):
+        del sample_github_pr_webhook["repository"]["id"]
+        pr = PROpenedForReview.from_github_pr_event(sample_github_pr_webhook)
+        assert pr is None
 
     def test_from_github_pr_event_missing_owner(self, sample_github_pr_webhook):
         """Test parsing PR webhook with missing owner."""
@@ -95,6 +101,7 @@ class TestPRPayload:
             repo_name="repo",
             full_name="owner/repo",
             repo_url="https://github.com/owner/repo",
+            github_repo_id=42,
             pr_number=1,
             pr_title="Title",
             base_branch="main",
@@ -113,6 +120,7 @@ class TestPRPayload:
             repo_name="repo",
             full_name="owner/repo",
             repo_url="https://github.com/owner/repo",
+            github_repo_id=42,
             pr_number=1,
             pr_title="Title",
             base_branch="main",

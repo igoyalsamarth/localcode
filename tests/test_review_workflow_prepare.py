@@ -15,6 +15,7 @@ def _sample_work(**kwargs) -> PROpenedForReview:
         repo_name="r",
         full_name="o/r",
         repo_url="https://github.com/o/r",
+        github_repo_id=1001,
         pr_number=7,
         pr_title="T",
         pr_body="",

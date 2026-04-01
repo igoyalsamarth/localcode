@@ -106,6 +106,7 @@ def sample_github_pr_webhook():
             },
         },
         "repository": {
+            "id": 987_654_321,
             "name": "test-repo",
             "full_name": "test-owner/test-repo",
             "owner": {
@@ -129,6 +130,7 @@ def sample_github_issue_webhook():
             "body": "This is a test issue",
         },
         "repository": {
+            "id": 987_654_321,
             "name": "test-repo",
             "full_name": "test-owner/test-repo",
             "owner": {
@@ -155,6 +157,7 @@ def sample_github_labeled_issue_webhook():
             "name": "greagent:code",
         },
         "repository": {
+            "id": 987_654_321,
             "name": "test-repo",
             "full_name": "test-owner/test-repo",
             "owner": {

@@ -370,6 +370,7 @@ async def _handle_issues_event(
         "repo_name": work.repo_name,
         "repo_url": work.repo_url,
         "full_name": work.full_name,
+        "github_repo_id": work.github_repo_id,
         "issue_number": work.issue_number,
         "issue_title": work.issue_title,
         "issue_body": work.issue_body,
@@ -453,6 +454,7 @@ async def _handle_pull_request_event(
         "repo_name": work.repo_name,
         "repo_url": work.repo_url,
         "full_name": work.full_name,
+        "github_repo_id": work.github_repo_id,
         "pr_number": work.pr_number,
         "pr_title": work.pr_title,
         "pr_body": work.pr_body,
@@ -483,8 +485,8 @@ async def github_webhook(
     Single endpoint for GitHub webhooks (GitHub App or repository).
 
     - ``installation`` / ``installation_repositories``: persist installation and repos.
-    - ``issues``: enqueue coder agent task to RabbitMQ via Dramatiq (processed by workers).
-    - ``pull_request``: enqueue review agent task to RabbitMQ via Dramatiq (processed by workers).
+    - ``issues``: enqueue coder task on the shared ``github_agent`` Dramatiq queue.
+    - ``pull_request``: enqueue review task on the same ``github_agent`` queue.
     """
     payload = await request.body()
 

@@ -24,6 +24,7 @@ class IssueOpenedForCoder(BaseModel):
     repo_name: str = Field(..., description="Short repository name")
     full_name: str = Field(..., description="owner/repo")
     repo_url: str = Field(..., description="HTTPS clone/browse URL")
+    github_repo_id: int = Field(..., description="repository.id from the webhook")
     issue_number: int
     issue_title: str
     issue_body: str = ""
@@ -47,6 +48,14 @@ class IssueOpenedForCoder(BaseModel):
         if not owner or not repo_name or issue_number is None or issue_title is None:
             return None
 
+        raw_repo_id = repo.get("id")
+        try:
+            github_repo_id = int(raw_repo_id) if raw_repo_id is not None else None
+        except (TypeError, ValueError):
+            github_repo_id = None
+        if github_repo_id is None:
+            return None
+
         if not full_name:
             full_name = f"{owner}/{repo_name}"
 
@@ -65,6 +74,7 @@ class IssueOpenedForCoder(BaseModel):
             repo_name=repo_name,
             full_name=full_name,
             repo_url=f"https://github.com/{full_name}",
+            github_repo_id=github_repo_id,
             issue_number=int(issue_number),
             issue_title=str(issue_title),
             issue_body=issue_body,

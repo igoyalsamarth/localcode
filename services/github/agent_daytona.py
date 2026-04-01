@@ -10,7 +10,11 @@ from __future__ import annotations
 import shlex
 from dataclasses import dataclass
 
-from daytona import CreateSandboxFromSnapshotParams, Daytona
+from daytona import (
+    CreateSandboxFromSnapshotParams,
+    Daytona,
+    DaytonaNotFoundError,
+)
 from daytona import Sandbox as DaytonaSandboxHandle
 from langchain_daytona import DaytonaSandbox
 
@@ -166,10 +170,29 @@ def stop_sandbox(session: DaytonaAgentSession | None) -> None:
     """
     Stop the sandbox. For ephemeral sandboxes (``auto_delete_interval=0``), Daytona
     deletes the sandbox as soon as it is stopped—no separate delete call.
+
+    If ``stop()`` fails (e.g. timeout or API error), call ``delete()`` so the runner
+    does not leave a started sandbox behind.
     """
     if session is None:
         return
+    sandbox_id = session.sandbox.id
+    stop_timeout = 120.0
     try:
-        session.sandbox.stop()
+        session.sandbox.stop(timeout=stop_timeout)
+    except DaytonaNotFoundError:
+        return
     except Exception:
-        logger.exception("Failed to stop Daytona sandbox")
+        logger.exception(
+            "Failed to stop Daytona sandbox id=%s; attempting delete",
+            sandbox_id,
+        )
+        try:
+            session.sandbox.delete(timeout=stop_timeout)
+        except DaytonaNotFoundError:
+            return
+        except Exception:
+            logger.exception(
+                "Failed to delete Daytona sandbox id=%s after stop failure",
+                sandbox_id,
+            )
