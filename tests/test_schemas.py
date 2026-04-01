@@ -29,7 +29,6 @@ class TestSchemas:
             "github_login": "testuser",
             "avatar_url": "https://github.com/avatar.png",
             "auth_provider": "github",
-            "onboarded": False,
         }
 
         user = UserCreate(**user_data)
@@ -37,7 +36,6 @@ class TestSchemas:
         assert user.email == "test@example.com"
         assert user.username == "testuser"
         assert user.github_user_id == 12345
-        assert user.onboarded is False
 
     def test_user_schema(self):
         """Test User schema with ID and timestamp."""

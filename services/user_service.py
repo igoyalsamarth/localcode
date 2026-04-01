@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from uuid import UUID
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -71,9 +69,8 @@ def get_or_create_personal_workspace(session: Session, user: User) -> Organizati
         logger.info("Found personal workspace: %s", org.name)
         return org
 
-    login = user.github_login or user.username
-    display = f"{login}'s workspace"
-    logger.info("Creating personal workspace: %s", display)
+    display = f"{user.username}'s workspace"
+    logger.info("Creating personal workspace: %s for %s", display, user.username)
 
     promo_usd, promo_expires = signup_promotional_credit_defaults()
     org = Organization(
@@ -94,9 +91,8 @@ def get_or_create_personal_workspace(session: Session, user: User) -> Organizati
             role=MemberRole.creator,
         )
     )
-    user.onboarded = True
     session.flush()
-    logger.info("Personal workspace created for %s", login)
+    logger.info("Personal workspace created for %s", user.username)
     return org
 
 
@@ -138,18 +134,4 @@ def get_user_by_email(session: Session, email: str) -> User | None:
 
 def get_user_by_username(session: Session, username: str) -> User | None:
     stmt = select(User).where(User.username == username)
-    return session.execute(stmt).scalar_one_or_none()
-
-
-def get_personal_workspace_for_user(session: Session, user_id: UUID) -> Organization | None:
-    """GitHub App installs attach to the user's personal workspace."""
-    stmt = (
-        select(Organization)
-        .join(OrganizationMember)
-        .where(
-            OrganizationMember.user_id == user_id,
-            Organization.is_personal.is_(True),
-        )
-        .limit(1)
-    )
     return session.execute(stmt).scalar_one_or_none()

@@ -80,7 +80,6 @@ class TestUserService:
         assert member is not None
         assert member.role == MemberRole.creator
         assert org.promotional_balance_usd == SIGNUP_PROMO_WALLET_USD
-        assert user.onboarded is True
 
     def test_get_or_create_personal_workspace_idempotent(self, db_session):
         user = create_or_update_user(

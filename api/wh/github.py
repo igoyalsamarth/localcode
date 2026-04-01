@@ -28,6 +28,11 @@ from services.github.repository_bootstrap import (
     upsert_repository_from_github,
 )
 from services.github.installation_sync import sync_repositories_from_webhook_payload
+from services.github.pending_installation_buffer import (
+    delete_pending_if_exists,
+    merge_pending_repositories_added,
+    record_pending_installation_created,
+)
 from services.github.webhook_signature import verify_github_webhook_signature
 from services.github.agent_wallet_gate import (
     notify_insufficient_wallet_for_issue,
@@ -51,13 +56,17 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
     """
     installation = data.get("installation", {})
     installation_id = installation.get("id")
+    if installation_id is None:
+        return {"status": "ignored", "event": "installation", "reason": "missing_installation_id"}
     account = installation.get("account", {})
     account_login = account.get("login")
     action = data.get("action")
     account_type = account.get("type")
     account_avatar_url = account.get("avatar_url")
     permissions = installation.get("permissions", {})
-    repositories = data.get("repositories", [])
+    repositories = data.get("repositories") or []
+    sender = data.get("sender") or {}
+    sender_login = sender.get("login")
 
     logger.info(
         "GitHub App installation.created: account=%s installation_id=%s type=%s",
@@ -73,16 +82,24 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
         existing = session.execute(stmt).scalar_one_or_none()
 
         if not existing:
-            logger.info(
-                "installation_id=%s pending SPA callback (no DB row yet); "
-                "repositories will sync when the user completes install for their workspace",
-                installation_id,
+            record_pending_installation_created(
+                session,
+                installation_id=int(installation_id),
+                sender_login=sender_login,
+                account_login=account_login,
+                account_type=account_type,
+                account_avatar_url=account_avatar_url,
+                permissions=permissions if isinstance(permissions, dict) else None,
+                repositories=repositories if isinstance(repositories, list) else None,
             )
+            session.commit()
             return {
-                "status": "deferred",
+                "status": "buffered",
                 "action": action,
                 "installation_id": installation_id,
             }
+
+        delete_pending_if_exists(session, int(installation_id))
 
         existing.account_name = account_login or existing.account_name
         existing.account_type = account_type or existing.account_type
@@ -110,8 +127,12 @@ def _installation_deleted(data: dict[str, Any]) -> dict[str, Any]:
     installation = data.get("installation", {})
     installation_id = installation.get("id")
     action = data.get("action")
+    if installation_id is None:
+        return {"status": "ignored", "event": "installation", "reason": "missing_installation_id"}
 
     with session_scope() as session:
+        delete_pending_if_exists(session, int(installation_id))
+
         stmt = select(GitHubInstallation).where(
             GitHubInstallation.github_installation_id == installation_id
         )
@@ -190,9 +211,11 @@ def _handle_installation_repositories(data: dict[str, Any]) -> dict[str, Any]:
                             repo.get("full_name"),
                         )
             else:
-                logger.warning(
-                    "installation_repositories added but no DB row for installation_id=%s",
-                    installation_id,
+                merge_pending_repositories_added(
+                    session,
+                    int(installation_id),
+                    repos_added,
+                    account_login=account_login,
                 )
 
         try:

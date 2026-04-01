@@ -1,7 +1,7 @@
 """
 Service 1: API Backend
 Main FastAPI application for user-facing APIs and webhook handling.
-- User authentication, onboarding, connections, agents
+- User authentication, workspaces, connections, agents
 - GitHub webhook receiver (publishes to RabbitMQ via Dramatiq)
 - Does NOT execute the agent (that's done by workers)
 """
@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Greagent API Backend",
-    description="Main API for user authentication, onboarding, agent management, and webhook handling",
+    description="Main API for user authentication, workspaces, agent management, and webhook handling",
     version="0.1.0",
     lifespan=lifespan,
     reload=False,

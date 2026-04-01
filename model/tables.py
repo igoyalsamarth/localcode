@@ -53,7 +53,6 @@ class User(Base):
     github_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     auth_provider: Mapped[str] = mapped_column(String(64), nullable=False)
-    onboarded: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     owned_organizations: Mapped[list["Organization"]] = relationship(
@@ -205,6 +204,29 @@ class GitHubInstallation(Base):
 
     organization: Mapped["Organization"] = relationship(
         "Organization", back_populates="github_installations"
+    )
+
+
+class PendingGitHubInstallation(Base):
+    """
+    Buffers webhook payloads until the SPA completes install for a workspace.
+
+    GitHub may deliver ``installation`` / ``installation_repositories`` before the user
+    returns to the app callback; we merge repo snapshots here and apply them in
+    :func:`complete_installation_for_workspace`.
+    """
+
+    __tablename__ = "pending_github_installations"
+
+    github_installation_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    sender_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    account_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    account_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    account_avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    permissions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    repositories_json: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )
 
 

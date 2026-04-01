@@ -9,7 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from logger import get_logger
-from model.tables import GitHubInstallation, Organization, User
+from model.tables import GitHubInstallation, Organization, PendingGitHubInstallation, User
+from services.github.pending_installation_buffer import merge_repository_payloads
 from services.github.installation_token import (
     fetch_app_installation_json,
     get_api_token_for_installation,
@@ -67,6 +68,8 @@ def sync_repositories_from_webhook_payload(
     installation_id: int,
     repositories: list[dict[str, Any]],
     account_login_fallback: str | None,
+    *,
+    apply_labels: bool = True,
 ) -> None:
     """Upsert repositories from a GitHub ``installation`` webhook ``repositories`` list."""
     for repo in repositories:
@@ -85,7 +88,8 @@ def sync_repositories_from_webhook_payload(
                 repo.get("full_name"),
             )
     session.flush()
-    _ensure_labels_for_repositories(installation_id, repositories)
+    if apply_labels:
+        _ensure_labels_for_repositories(installation_id, repositories)
 
 
 def complete_installation_for_workspace(
@@ -98,12 +102,25 @@ def complete_installation_for_workspace(
     """
     Attach ``installation_id`` to ``org``, refresh account metadata from GitHub,
     and sync all accessible repositories via the installation token.
+
+    Webhook payloads received before this callback are read from
+    ``pending_github_installations`` and merged with the GitHub API repo list.
     """
     clear_organization_installation_pointers_except(session, installation_id, org.id)
 
+    pending_row = session.get(PendingGitHubInstallation, installation_id)
+    repos_buffered: list[dict[str, Any]] = []
+    pending_account: str | None = None
+    if pending_row:
+        pending_account = pending_row.account_login
+        if pending_row.repositories_json:
+            repos_buffered = list(pending_row.repositories_json)
+
     info = fetch_app_installation_json(installation_id)
     account = info.get("account") or {}
-    account_login = account.get("login") or user.github_login or "Unknown"
+    account_login = (
+        account.get("login") or user.github_login or pending_account or "Unknown"
+    )
     account_type = account.get("type")
     account_avatar_url = account.get("avatar_url")
     permissions = info.get("permissions")
@@ -132,6 +149,16 @@ def complete_installation_for_workspace(
     org.github_installation_id = installation_id
     session.flush()
 
+    if repos_buffered:
+        sync_repositories_from_webhook_payload(
+            session,
+            org.id,
+            installation_id,
+            repos_buffered,
+            account_login_fallback=account_login,
+            apply_labels=False,
+        )
+
     try:
         repos = list_installation_repositories(installation_id)
     except Exception:
@@ -156,4 +183,9 @@ def complete_installation_for_workspace(
                 repo.get("full_name"),
             )
     session.flush()
-    _ensure_labels_for_repositories(installation_id, repos)
+    merged_for_labels = merge_repository_payloads(repos_buffered, repos)
+    _ensure_labels_for_repositories(installation_id, merged_for_labels)
+
+    if pending_row is not None:
+        session.delete(pending_row)
+        session.flush()

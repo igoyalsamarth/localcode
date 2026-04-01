@@ -29,7 +29,6 @@ class UserBase(BaseModel):
     github_login: str | None = None
     avatar_url: str | None = None
     auth_provider: str
-    onboarded: bool = False
 
 
 class UserCreate(UserBase):
