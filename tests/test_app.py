@@ -54,13 +54,13 @@ class TestApp:
         auth_routes = [r for r in routes if r.startswith("/auth")]
         assert len(auth_routes) > 0
 
-    def test_app_has_workspaces_router(self):
-        """Test app includes workspaces router."""
+    def test_app_has_organization_router(self):
+        """Test app includes organization router."""
         from app import app
 
         routes = [route.path for route in app.routes]
-        workspace_routes = [r for r in routes if r.startswith("/workspaces")]
-        assert len(workspace_routes) > 0
+        org_routes = [r for r in routes if r.startswith("/organization")]
+        assert len(org_routes) > 0
 
     def test_app_has_connections_router(self):
         """Test app includes connections router."""

@@ -24,7 +24,6 @@ from model.enums import (
     AgentType,
     BillingCycle,
     GitHubWorkflowKind,
-    MemberRole,
     SubscriptionStatus,
 )
 
@@ -57,9 +56,6 @@ class User(Base):
 
     owned_organizations: Mapped[list["Organization"]] = relationship(
         "Organization", back_populates="owner", foreign_keys="Organization.owner_user_id"
-    )
-    organization_memberships: Mapped[list["OrganizationMember"]] = relationship(
-        "OrganizationMember", back_populates="user"
     )
 
 
@@ -107,11 +103,6 @@ class Organization(Base):
         "User",
         foreign_keys="Organization.created_by_user_id",
     )
-    members: Mapped[list["OrganizationMember"]] = relationship(
-        "OrganizationMember",
-        back_populates="organization",
-        cascade="all, delete-orphan",
-    )
     github_installations: Mapped[list["GitHubInstallation"]] = relationship(
         "GitHubInstallation",
         back_populates="organization",
@@ -131,43 +122,6 @@ class Organization(Base):
         "Subscription",
         back_populates="organization",
         cascade="all, delete-orphan",
-    )
-
-
-class OrganizationMember(Base):
-    __tablename__ = "organization_members"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid4_default,
-    )
-    organization_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("organizations.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    role: Mapped[MemberRole] = mapped_column(
-        # VARCHAR, not PostgreSQL CREATE TYPE — avoids races when many workers call create_all().
-        Enum(MemberRole, native_enum=False, length=16),
-        nullable=False,
-    )
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-    organization: Mapped["Organization"] = relationship(
-        "Organization", back_populates="members"
-    )
-    user: Mapped["User"] = relationship(
-        "User", back_populates="organization_memberships"
-    )
-
-    __table_args__ = (
-        Index("ix_organization_members_org_user", "organization_id", "user_id", unique=True),
     )
 
 
@@ -204,29 +158,6 @@ class GitHubInstallation(Base):
 
     organization: Mapped["Organization"] = relationship(
         "Organization", back_populates="github_installations"
-    )
-
-
-class PendingGitHubInstallation(Base):
-    """
-    Buffers webhook payloads until the SPA completes install for a workspace.
-
-    GitHub may deliver ``installation`` / ``installation_repositories`` before the user
-    returns to the app callback; we merge repo snapshots here and apply them in
-    :func:`complete_installation_for_workspace`.
-    """
-
-    __tablename__ = "pending_github_installations"
-
-    github_installation_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    sender_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    account_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    account_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    account_avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    permissions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    repositories_json: Mapped[list | None] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
     )
 
 

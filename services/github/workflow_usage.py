@@ -21,7 +21,7 @@ from model.enums import GitHubWorkflowKind
 from model.tables import (
     AgentWorkflowUsage,
     Model,
-    OrganizationMember,
+    Organization,
     Repository,
     User,
 )
@@ -116,13 +116,10 @@ def _resolve_trigger_user_id(
     ).scalar_one_or_none()
     if user is None:
         return None
-    member = session.execute(
-        select(OrganizationMember).where(
-            OrganizationMember.organization_id == org_id,
-            OrganizationMember.user_id == user.id,
-        )
-    ).scalar_one_or_none()
-    return user.id if member else None
+    org = session.get(Organization, org_id)
+    if org is None or org.owner_user_id != user.id:
+        return None
+    return user.id
 
 
 def record_github_workflow_usage(

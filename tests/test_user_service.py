@@ -6,13 +6,11 @@ from constants import SIGNUP_PROMO_WALLET_USD
 
 from services.user_service import (
     create_or_update_user,
-    create_team_workspace,
     get_or_create_personal_workspace,
     get_user_by_email,
     get_user_by_github_id,
 )
-from model.tables import User, Organization, OrganizationMember
-from model.enums import MemberRole
+from model.tables import User, Organization
 
 
 @pytest.mark.unit
@@ -73,12 +71,7 @@ class TestUserService:
         assert org.owner_user_id == user.id
         assert org.name == "testuser's workspace"
 
-        member = db_session.query(OrganizationMember).filter_by(
-            organization_id=org.id,
-            user_id=user.id,
-        ).first()
-        assert member is not None
-        assert member.role == MemberRole.creator
+        assert org.owner_user_id == user.id
         assert org.promotional_balance_usd == SIGNUP_PROMO_WALLET_USD
 
     def test_get_or_create_personal_workspace_idempotent(self, db_session):
@@ -97,24 +90,6 @@ class TestUserService:
         org2 = get_or_create_personal_workspace(db_session, user)
 
         assert org2.id == org1.id
-
-    def test_create_team_workspace_no_promo(self, db_session):
-        user = create_or_update_user(
-            db_session,
-            email="test@example.com",
-            name="Test User",
-            github_user_id=12345,
-            github_login="testuser",
-            avatar_url=None,
-        )
-        db_session.commit()
-
-        org = create_team_workspace(db_session, user, "Team A")
-
-        assert org.is_personal is False
-        assert org.name == "Team A"
-        assert org.promotional_balance_usd == 0
-        assert org.promotional_balance_expires_at is None
 
     def test_get_user_by_github_id_found(self, db_session):
         user = create_or_update_user(

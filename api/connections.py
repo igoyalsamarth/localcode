@@ -7,10 +7,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from api.deps import get_current_org_id, get_current_user_id
-from api.user_org import require_org_membership, require_workspace_role
+from api.user_org import require_org_membership
 from constants import GITHUB_APP_SLUG
 from db import session_scope
-from model.enums import MemberRole
 from model.tables import User, Organization, GitHubInstallation
 from logger import get_logger
 from services.github.installation_sync import complete_installation_for_workspace
@@ -23,8 +22,6 @@ router = APIRouter(prefix="/connections", tags=["connections"])
 class GitHubInstallationCallbackBody(BaseModel):
     installation_id: int = Field(..., ge=1)
     setup_action: str | None = None
-    """Echoed from the install URL; must match the workspace id in the session JWT."""
-    state: UUID
 
 
 @router.get("/github")
@@ -38,7 +35,7 @@ async def get_github_connection(
     Returns connection details if GitHub App is installed.
     """
     with session_scope() as session:
-        user, org, _ = require_org_membership(session, user_id, org_id)
+        user, org = require_org_membership(session, user_id, org_id)
 
         # Check if organization has GitHub App installation
         stmt = select(GitHubInstallation).where(
@@ -74,7 +71,7 @@ async def get_github_installation(
     Returns installation details including repositories and permissions.
     """
     with session_scope() as session:
-        user, org, _ = require_org_membership(session, user_id, org_id)
+        user, org = require_org_membership(session, user_id, org_id)
 
         # Check if organization has GitHub App installation
         stmt = select(GitHubInstallation).where(
@@ -119,21 +116,16 @@ async def get_github_installation(
         }
 
 
-def _github_app_install_response(*, workspace_org_id: UUID) -> dict:
+def _github_app_install_response() -> dict:
     if not GITHUB_APP_SLUG:
         raise HTTPException(
             status_code=500,
             detail="GITHUB_APP_SLUG not configured",
         )
-    state = str(workspace_org_id)
     installation_url = (
         f"https://github.com/apps/{GITHUB_APP_SLUG}/installations/new"
-        f"?state={state}"
     )
-    logger.info(
-        "Generated GitHub App installation URL for workspace org_id=%s",
-        state,
-    )
+    logger.info("Generated GitHub App installation URL (single workspace per user)")
     return {"installUrl": installation_url}
 
 
@@ -143,13 +135,11 @@ async def install_github_app(
     org_id: UUID = Depends(get_current_org_id),
 ):
     """
-    Generate GitHub App installation URL for the **current workspace** (JWT ``org_id``).
-
-    ``state`` is set so the post-install redirect can be validated against the same workspace.
+    Generate GitHub App installation URL for the authenticated user's organization.
     """
     with session_scope() as session:
         require_org_membership(session, user_id, org_id)
-    return _github_app_install_response(workspace_org_id=org_id)
+    return _github_app_install_response()
 
 
 @router.get("/github/connect")
@@ -160,11 +150,11 @@ async def connect_github(
     """
     Alias for /github/install endpoint (GET method).
 
-    Generate GitHub App installation URL for the current workspace.
+    Generate GitHub App installation URL for the current organization.
     """
     with session_scope() as session:
         require_org_membership(session, user_id, org_id)
-    return _github_app_install_response(workspace_org_id=org_id)
+    return _github_app_install_response()
 
 
 @router.post("/github/installation/callback")
@@ -176,17 +166,11 @@ async def github_installation_callback_api(
     """
     Complete GitHub App installation (SPA callback).
 
-    Frontend receives ``installation_id`` and ``state`` from GitHub's redirect and POSTs here
-    with a Bearer session token. ``state`` must equal the JWT workspace id.
+    Frontend receives ``installation_id`` from GitHub's redirect and POSTs here with the
+    session token. The installation is bound to the organization in the JWT (single workspace).
     """
-    if body.state != org_id:
-        raise HTTPException(
-            status_code=403,
-            detail="Workspace mismatch: install state does not match your current workspace",
-        )
     with session_scope() as session:
-        user, org, member = require_org_membership(session, user_id, org_id)
-        require_workspace_role(member, MemberRole.admin)
+        user, org = require_org_membership(session, user_id, org_id)
         complete_installation_for_workspace(
             session,
             org=org,
@@ -211,8 +195,7 @@ async def disconnect_github(
     Disconnect GitHub App installation for the authenticated user's organization.
     """
     with session_scope() as session:
-        user, org, member = require_org_membership(session, user_id, org_id)
-        require_workspace_role(member, MemberRole.admin)
+        user, org = require_org_membership(session, user_id, org_id)
 
         # Delete GitHub installation
         stmt = select(GitHubInstallation).where(

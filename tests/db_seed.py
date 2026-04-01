@@ -1,11 +1,10 @@
-"""Shared ORM seeds for tests (workspaces + membership)."""
+"""Shared ORM seeds for tests (organizations + membership)."""
 
 from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from model.enums import MemberRole
-from model.tables import Organization, OrganizationMember, User
+from model.tables import Organization, User
 
 
 def seed_user(session: Session, *, email: str = "u@e.com", username: str = "u") -> User:
@@ -29,13 +28,5 @@ def seed_workspace(
         owner_user_id=user.id,
     )
     session.add(org)
-    session.flush()
-    session.add(
-        OrganizationMember(
-            organization_id=org.id,
-            user_id=user.id,
-            role=MemberRole.creator,
-        )
-    )
     session.flush()
     return org

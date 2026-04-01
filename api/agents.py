@@ -10,10 +10,10 @@ from pydantic import BaseModel
 from sqlalchemy import String, cast, distinct, func, select
 
 from api.deps import get_current_org_id, get_current_user_id
-from api.user_org import require_org_membership, require_workspace_role
+from api.user_org import require_org_membership
 from db import session_scope
 from logger import get_logger
-from model.enums import AgentType, GitHubWorkflowKind, MemberRole
+from model.enums import AgentType, GitHubWorkflowKind
 from model.tables import Agent, AgentWorkflowUsage, Repository, RepositoryAgent
 from services.github.coder_workflow import ensure_greagent_labels_on_repository
 from services.github.repository_bootstrap import get_or_create_default_model
@@ -209,7 +209,7 @@ async def get_coder_settings(
     Returns all repositories in the user's organization and their agent configurations.
     """
     with session_scope() as session:
-        _, org, _ = require_org_membership(session, user_id, org_id)
+        _, org = require_org_membership(session, user_id, org_id)
         agent = _ensure_org_agent(session, org, AgentType.code)
         return _agent_settings_payload(session, org, agent)
 
@@ -223,8 +223,7 @@ async def update_coder_repository_config(
 ):
     """Update repository configuration for the coder agent."""
     with session_scope() as session:
-        _, org, member = require_org_membership(session, user_id, org_id)
-        require_workspace_role(member, MemberRole.admin)
+        _, org = require_org_membership(session, user_id, org_id)
         return _update_repository_agent_config(
             session,
             org,
@@ -246,7 +245,7 @@ async def get_reviewer_settings(
     Same response shape as ``GET /agents/coder/settings``.
     """
     with session_scope() as session:
-        _, org, _ = require_org_membership(session, user_id, org_id)
+        _, org = require_org_membership(session, user_id, org_id)
         agent = _ensure_org_agent(session, org, AgentType.review)
         return _agent_settings_payload(session, org, agent)
 
@@ -260,8 +259,7 @@ async def update_reviewer_repository_config(
 ):
     """Update repository configuration for the reviewer agent."""
     with session_scope() as session:
-        _, org, member = require_org_membership(session, user_id, org_id)
-        require_workspace_role(member, MemberRole.admin)
+        _, org = require_org_membership(session, user_id, org_id)
         return _update_repository_agent_config(
             session,
             org,
@@ -447,13 +445,12 @@ async def get_workflow_usage(
     ``items`` include the same ``workflow`` plus ``itemNumber`` (issue or PR number).
     """
     with session_scope() as session:
-        _, _, member = require_org_membership(session, user_id, org_id)
-        uid_filter = user_id if member.role == MemberRole.user else None
+        _, _ = require_org_membership(session, user_id, org_id)
 
     return _workflow_usage_payload(
         org_id=org_id,
         repo_limit=repo_limit,
         item_limit=item_limit,
         workflow=workflow,
-        trigger_user_id=uid_filter,
+        trigger_user_id=None,
     )

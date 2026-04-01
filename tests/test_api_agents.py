@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch
 
 from api.jwt_session import create_session_token
-from model.enums import AgentType, MemberRole
-from model.tables import Agent, Organization, OrganizationMember, Repository, User
+from model.enums import AgentType
+from model.tables import Agent, Organization, Repository, User
 
 
 @pytest.mark.unit
@@ -44,14 +44,6 @@ class TestAgentsAPIIntegration:
             owner_user_id=user.id,
         )
         db_session.add(org)
-        db_session.flush()
-        db_session.add(
-            OrganizationMember(
-                organization_id=org.id,
-                user_id=user.id,
-                role=MemberRole.creator,
-            )
-        )
         db_session.flush()
         repo = Repository(
             organization_id=org.id,

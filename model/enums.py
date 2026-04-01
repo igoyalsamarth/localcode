@@ -3,12 +3,6 @@
 from enum import StrEnum
 
 
-class MemberRole(StrEnum):
-    creator = "creator"
-    admin = "admin"
-    user = "user"
-
-
 class AgentType(StrEnum):
     review = "review"
     code = "code"

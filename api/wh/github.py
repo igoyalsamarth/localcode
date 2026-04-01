@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from db import session_scope
 from logger import get_logger
-from model.tables import GitHubInstallation, Organization
+from model.tables import GitHubInstallation, Organization, User
 from services.github.coder_trigger import resolve_coder_issue_work
 from services.github.coder_workflow import (
     ensure_greagent_labels_on_repository,
@@ -27,12 +27,11 @@ from services.github.repository_bootstrap import (
     ensure_default_review_repository_agent,
     upsert_repository_from_github,
 )
-from services.github.installation_sync import sync_repositories_from_webhook_payload
-from services.github.pending_installation_buffer import (
-    delete_pending_if_exists,
-    merge_pending_repositories_added,
-    record_pending_installation_created,
+from services.github.installation_sync import (
+    complete_installation_for_workspace,
+    sync_repositories_from_webhook_payload,
 )
+from services.user_service import get_organization_for_user
 from services.github.webhook_signature import verify_github_webhook_signature
 from services.github.agent_wallet_gate import (
     notify_insufficient_wallet_for_issue,
@@ -50,9 +49,9 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
     """
     GitHub sends this before the user returns to our SPA.
 
-    Workspace binding is done in ``POST /connections/github/installation/callback`` using
-    ``state`` + session JWT. If the DB row already exists (callback completed first), we only
-    sync repositories from this payload.
+    We attach the installation to the GreAgent user identified by ``sender`` or installation
+    ``account`` login (must match ``users.github_login``). The SPA callback remains for
+    idempotent completion when the webhook could not resolve the user yet.
     """
     installation = data.get("installation", {})
     installation_id = installation.get("id")
@@ -82,24 +81,45 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
         existing = session.execute(stmt).scalar_one_or_none()
 
         if not existing:
-            record_pending_installation_created(
+            login = sender_login or account_login
+            user = None
+            if login:
+                user = session.execute(
+                    select(User).where(User.github_login == login)
+                ).scalar_one_or_none()
+            if not user and account_login and account_login != login:
+                user = session.execute(
+                    select(User).where(User.github_login == account_login)
+                ).scalar_one_or_none()
+
+            org = get_organization_for_user(session, user.id) if user else None
+            if not user or not org:
+                logger.warning(
+                    "installation.created ignored: no GreAgent user/org for "
+                    "installation_id=%s sender=%s account=%s",
+                    installation_id,
+                    sender_login,
+                    account_login,
+                )
+                return {
+                    "status": "ignored",
+                    "event": "installation",
+                    "reason": "unknown_installer",
+                    "installation_id": installation_id,
+                }
+
+            complete_installation_for_workspace(
                 session,
+                org=org,
+                user=user,
                 installation_id=int(installation_id),
-                sender_login=sender_login,
-                account_login=account_login,
-                account_type=account_type,
-                account_avatar_url=account_avatar_url,
-                permissions=permissions if isinstance(permissions, dict) else None,
-                repositories=repositories if isinstance(repositories, list) else None,
             )
             session.commit()
             return {
-                "status": "buffered",
+                "status": "received",
                 "action": action,
                 "installation_id": installation_id,
             }
-
-        delete_pending_if_exists(session, int(installation_id))
 
         existing.account_name = account_login or existing.account_name
         existing.account_type = account_type or existing.account_type
@@ -131,8 +151,6 @@ def _installation_deleted(data: dict[str, Any]) -> dict[str, Any]:
         return {"status": "ignored", "event": "installation", "reason": "missing_installation_id"}
 
     with session_scope() as session:
-        delete_pending_if_exists(session, int(installation_id))
-
         stmt = select(GitHubInstallation).where(
             GitHubInstallation.github_installation_id == installation_id
         )
@@ -211,11 +229,10 @@ def _handle_installation_repositories(data: dict[str, Any]) -> dict[str, Any]:
                             repo.get("full_name"),
                         )
             else:
-                merge_pending_repositories_added(
-                    session,
-                    int(installation_id),
-                    repos_added,
-                    account_login=account_login,
+                logger.warning(
+                    "installation_repositories.added before installation row exists "
+                    "(installation_id=%s); callback or installation.created will sync repos",
+                    installation_id,
                 )
 
         try:

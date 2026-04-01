@@ -9,13 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.jwt_session import create_session_token
-from model.enums import AgentType, GitHubWorkflowKind, MemberRole
+from model.enums import AgentType, GitHubWorkflowKind
 from model.tables import (
     Agent,
     AgentWorkflowUsage,
     Model,
     Organization,
-    OrganizationMember,
     Repository,
     RepositoryAgent,
     User,
@@ -53,11 +52,6 @@ class TestDashboardAPI:
         owner = User(email="dash-owner@example.com", username="dashowner", auth_provider="github")
         db_session.add(owner)
         db_session.flush()
-        member_user = User(
-            email="dash-member@example.com", username="dashmember", auth_provider="github"
-        )
-        db_session.add(member_user)
-        db_session.flush()
 
         org = Organization(
             name="Dash Org",
@@ -67,17 +61,6 @@ class TestDashboardAPI:
         )
         db_session.add(org)
         db_session.flush()
-
-        db_session.add(
-            OrganizationMember(
-                organization_id=org.id, user_id=owner.id, role=MemberRole.admin
-            )
-        )
-        db_session.add(
-            OrganizationMember(
-                organization_id=org.id, user_id=member_user.id, role=MemberRole.user
-            )
-        )
 
         model = Model(provider="openai", name="gpt-4")
         db_session.add(model)
@@ -177,10 +160,10 @@ class TestDashboardAPI:
         assert r.status_code == 200
         data = r.json()
         assert data["activeAgentsCount"] == 1
-        assert data["teamMemberCount"] == 2
         assert data["activityLast24Hours"] == 2
         assert len(data["recentActivity"]) == 3
-        assert data["workspaceRole"] == "admin"
+        assert "teamMemberCount" not in data
+        assert "workspaceRole" not in data
         assert data["recentActivity"][0]["workflow"] == "code"
         assert data["recentActivity"][0]["itemNumber"] == 3
         assert data["recentActivity"][0]["githubFullName"] == "acme/svc"

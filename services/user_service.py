@@ -1,12 +1,13 @@
-"""User and workspace (organization) management."""
+"""User and organization management."""
 
 from __future__ import annotations
+
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from model.enums import MemberRole
-from model.tables import Organization, OrganizationMember, User
+from model.tables import Organization, User
 from logger import get_logger
 from services.wallet import signup_promotional_credit_defaults
 
@@ -51,26 +52,25 @@ def create_or_update_user(
 
 def get_or_create_personal_workspace(session: Session, user: User) -> Organization:
     """
-    Return the user's personal workspace, creating it on first sign-in.
+    Return the user's personal organization, creating it on first sign-in.
 
-    Personal workspaces receive signup promotional credit. Name: ``{login}'s workspace``.
+    Signup promotional credit applies. Name: ``{login}'s workspace``.
     """
     stmt = (
         select(Organization)
-        .join(OrganizationMember)
         .where(
-            OrganizationMember.user_id == user.id,
+            Organization.owner_user_id == user.id,
             Organization.is_personal.is_(True),
         )
         .limit(1)
     )
     org = session.execute(stmt).scalar_one_or_none()
     if org:
-        logger.info("Found personal workspace: %s", org.name)
+        logger.info("Found personal organization: %s", org.name)
         return org
 
     display = f"{user.username}'s workspace"
-    logger.info("Creating personal workspace: %s for %s", display, user.username)
+    logger.info("Creating personal organization: %s for %s", display, user.username)
 
     promo_usd, promo_expires = signup_promotional_credit_defaults()
     org = Organization(
@@ -83,43 +83,14 @@ def get_or_create_personal_workspace(session: Session, user: User) -> Organizati
     )
     session.add(org)
     session.flush()
-
-    session.add(
-        OrganizationMember(
-            organization_id=org.id,
-            user_id=user.id,
-            role=MemberRole.creator,
-        )
-    )
-    session.flush()
-    logger.info("Personal workspace created for %s", user.username)
+    logger.info("Personal organization created for %s", user.username)
     return org
 
 
-def create_team_workspace(session: Session, creator: User, name: str) -> Organization:
-    """
-    Create an additional workspace (no signup promo). Creator becomes ``MemberRole.creator``.
-
-    ``owner_user_id`` is the creator for billing ownership.
-    """
-    org = Organization(
-        name=name.strip(),
-        is_personal=False,
-        created_by_user_id=creator.id,
-        owner_user_id=creator.id,
-    )
-    session.add(org)
-    session.flush()
-    session.add(
-        OrganizationMember(
-            organization_id=org.id,
-            user_id=creator.id,
-            role=MemberRole.creator,
-        )
-    )
-    session.flush()
-    logger.info("Team workspace %s created by %s", org.name, creator.username)
-    return org
+def get_organization_for_user(session: Session, user_id: UUID) -> Organization | None:
+    """Return the organization owned by this user (one per account)."""
+    stmt = select(Organization).where(Organization.owner_user_id == user_id).limit(1)
+    return session.execute(stmt).scalar_one_or_none()
 
 
 def get_user_by_github_id(session: Session, github_user_id: int) -> User | None:
@@ -129,9 +100,4 @@ def get_user_by_github_id(session: Session, github_user_id: int) -> User | None:
 
 def get_user_by_email(session: Session, email: str) -> User | None:
     stmt = select(User).where(User.email == email)
-    return session.execute(stmt).scalar_one_or_none()
-
-
-def get_user_by_username(session: Session, username: str) -> User | None:
-    stmt = select(User).where(User.username == username)
     return session.execute(stmt).scalar_one_or_none()

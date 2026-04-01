@@ -6,7 +6,6 @@ from decimal import Decimal
 from model.tables import (
     User,
     Organization,
-    OrganizationMember,
     Repository,
     GitHubInstallation,
     Model,
@@ -14,7 +13,6 @@ from model.tables import (
     Subscription,
 )
 from model.enums import (
-    MemberRole,
     AgentType,
     SubscriptionStatus,
     BillingCycle,
@@ -67,32 +65,6 @@ class TestModels:
         assert org.name == "Test Org"
         assert org.owner_user_id == user.id
         assert org.created_at is not None
-
-    def test_organization_member_model_creation(self, db_session):
-        """Test OrganizationMember model creation."""
-        user = User(email="test@example.com", username="testuser", auth_provider="github")
-        db_session.add(user)
-        db_session.flush()
-
-        org = Organization(
-            name="Test Org",
-            is_personal=False,
-            created_by_user_id=user.id,
-            owner_user_id=user.id,
-        )
-        db_session.add(org)
-        db_session.flush()
-
-        member = OrganizationMember(
-            organization_id=org.id,
-            user_id=user.id,
-            role=MemberRole.creator,
-        )
-        db_session.add(member)
-        db_session.commit()
-
-        assert member.id is not None
-        assert member.role == MemberRole.creator
 
     def test_repository_model_creation(self, db_session):
         """Test Repository model creation."""

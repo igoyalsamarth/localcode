@@ -8,11 +8,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.jwt_session import create_session_token
-from model.enums import GitHubWorkflowKind, MemberRole
+from model.enums import GitHubWorkflowKind
 from model.tables import (
     AgentWorkflowUsage,
     Organization,
-    OrganizationMember,
     Repository,
     User,
 )
@@ -60,14 +59,6 @@ class TestAgentsWorkflowUsageAPI:
             owner_user_id=user.id,
         )
         db_session.add(org)
-        db_session.flush()
-        db_session.add(
-            OrganizationMember(
-                organization_id=org.id,
-                user_id=user.id,
-                role=MemberRole.creator,
-            )
-        )
         db_session.flush()
         repo = Repository(
             organization_id=org.id,

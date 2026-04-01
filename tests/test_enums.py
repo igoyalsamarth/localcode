@@ -3,7 +3,6 @@
 import pytest
 
 from model.enums import (
-    MemberRole,
     AgentType,
     GitHubWorkflowKind,
     SubscriptionStatus,
@@ -14,14 +13,6 @@ from model.enums import (
 @pytest.mark.unit
 class TestEnums:
     """Test model enums."""
-
-    def test_member_role_values(self):
-        """Test MemberRole enum values."""
-        assert MemberRole.creator == "creator"
-        assert MemberRole.admin == "admin"
-        assert MemberRole.user == "user"
-
-        assert len(MemberRole) == 3
 
     def test_agent_type_values(self):
         """Test AgentType enum values."""
@@ -61,7 +52,6 @@ class TestEnums:
         """Test all enums inherit from StrEnum."""
         from enum import StrEnum
 
-        assert issubclass(MemberRole, StrEnum)
         assert issubclass(AgentType, StrEnum)
         assert issubclass(GitHubWorkflowKind, StrEnum)
         assert issubclass(SubscriptionStatus, StrEnum)
@@ -69,14 +59,11 @@ class TestEnums:
 
     def test_enum_string_comparison(self):
         """Test enums can be compared with strings."""
-        assert MemberRole.creator == "creator"
         assert AgentType.code == "code"
         assert GitHubWorkflowKind.review == "review"
 
     def test_enum_iteration(self):
         """Test enums can be iterated."""
-        roles = list(MemberRole)
-        assert len(roles) == 3
-        assert MemberRole.creator in roles
-        assert MemberRole.admin in roles
-        assert MemberRole.user in roles
+        types = list(AgentType)
+        assert len(types) == 3
+        assert AgentType.code in types

@@ -1,8 +1,7 @@
-"""GitHub App install URL and SPA callback (workspace-scoped)."""
+"""GitHub App install URL and SPA callback (organization from session JWT)."""
 
 from contextlib import contextmanager
 from unittest.mock import patch
-from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -20,7 +19,7 @@ def connections_client():
 
 @pytest.mark.unit
 class TestConnectionsGitHubInstall:
-    def test_install_url_contains_workspace_state(
+    def test_install_url_has_no_state_query_param(
         self, connections_client, db_session, mock_env
     ):
         user = seed_user(db_session, email="gh@e.com", username="ghuser")
@@ -43,35 +42,10 @@ class TestConnectionsGitHubInstall:
             )
         assert r.status_code == 200
         url = r.json()["installUrl"]
-        assert str(org.id) in url
-        assert "state=" in url
+        assert "state=" not in url
+        assert "test-github-app" in url
 
-    def test_callback_rejects_state_mismatch(
-        self, connections_client, db_session, mock_env
-    ):
-        user = seed_user(db_session, email="gh2@e.com", username="ghuser2")
-        org = seed_workspace(db_session, user, name="W1", is_personal=False)
-        other = uuid4()
-        user.github_login = "ghuser2"
-        db_session.commit()
-        token = create_session_token(
-            user_id=user.id, org_id=org.id, github_login="ghuser2"
-        )
-        with patch(
-            "api.connections.session_scope",
-            _patched_session_scope(db_session),
-        ):
-            r = connections_client.post(
-                "/connections/github/installation/callback",
-                headers={"Authorization": f"Bearer {token}"},
-                json={
-                    "installation_id": 99_001,
-                    "state": str(other),
-                },
-            )
-        assert r.status_code == 403
-
-    def test_callback_completes_when_state_matches(
+    def test_callback_completes_installation(
         self, connections_client, db_session, mock_env
     ):
         user = seed_user(db_session, email="gh3@e.com", username="ghuser3")
@@ -96,7 +70,6 @@ class TestConnectionsGitHubInstall:
                 headers={"Authorization": f"Bearer {token}"},
                 json={
                     "installation_id": 99_002,
-                    "state": str(org.id),
                 },
             )
         assert r.status_code == 200

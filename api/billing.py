@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from api.deps import get_current_org_id, get_current_user_id
-from api.user_org import require_org_membership, require_workspace_role
+from api.user_org import require_org_membership
 from constants import (
     CLIENT_URL,
     DODO_PAYMENTS_API_KEY,
@@ -23,7 +23,6 @@ from constants import (
 )
 from db import session_scope
 from logger import get_logger
-from model.enums import MemberRole
 from model.tables import BillingWebhookDelivery, Organization, Subscription, User
 from services.dodo_billing import apply_unwrapped_webhook_event
 from services.wallet import organization_spendable_balance_usd
@@ -124,8 +123,7 @@ async def create_checkout_session(
         )
 
     with session_scope() as db:
-        _, _, member = require_org_membership(db, user_id, org_id)
-        require_workspace_role(member, MemberRole.admin)
+        _, _ = require_org_membership(db, user_id, org_id)
         stmt = select(User).where(User.id == user_id)
         user = db.execute(stmt).scalar_one_or_none()
         if not user:
@@ -209,8 +207,7 @@ async def create_topup_checkout_session(
         )
 
     with session_scope() as db:
-        _, _, member = require_org_membership(db, user_id, org_id)
-        require_workspace_role(member, MemberRole.admin)
+        _, _ = require_org_membership(db, user_id, org_id)
         stmt = select(User).where(User.id == user_id)
         user = db.execute(stmt).scalar_one_or_none()
         if not user:
@@ -308,8 +305,7 @@ async def create_customer_portal_session(
 ):
     """Create a short-lived Dodo customer portal URL for the org’s paying customer."""
     with session_scope() as db:
-        _, _, member = require_org_membership(db, user_id, org_id)
-        require_workspace_role(member, MemberRole.admin)
+        _, _ = require_org_membership(db, user_id, org_id)
         org = db.get(Organization, org_id)
         if org is None or not org.dodo_customer_id:
             raise HTTPException(

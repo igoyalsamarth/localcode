@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from model.enums import AgentType, BillingCycle, MemberRole, SubscriptionStatus
+from model.enums import AgentType, BillingCycle, SubscriptionStatus
 
 
 def _orm_config() -> ConfigDict:
@@ -55,23 +55,6 @@ class OrganizationCreate(OrganizationBase):
 
 
 class Organization(OrganizationBase):
-    model_config = _orm_config()
-
-    id: UUID
-    created_at: datetime | None = None
-
-
-class OrganizationMemberBase(BaseModel):
-    organization_id: UUID
-    user_id: UUID
-    role: MemberRole
-
-
-class OrganizationMemberCreate(OrganizationMemberBase):
-    pass
-
-
-class OrganizationMember(OrganizationMemberBase):
     model_config = _orm_config()
 
     id: UUID
