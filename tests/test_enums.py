@@ -17,9 +17,9 @@ class TestEnums:
 
     def test_member_role_values(self):
         """Test MemberRole enum values."""
-        assert MemberRole.owner == "owner"
+        assert MemberRole.creator == "creator"
         assert MemberRole.admin == "admin"
-        assert MemberRole.member == "member"
+        assert MemberRole.user == "user"
 
         assert len(MemberRole) == 3
 
@@ -69,7 +69,7 @@ class TestEnums:
 
     def test_enum_string_comparison(self):
         """Test enums can be compared with strings."""
-        assert MemberRole.owner == "owner"
+        assert MemberRole.creator == "creator"
         assert AgentType.code == "code"
         assert GitHubWorkflowKind.review == "review"
 
@@ -77,6 +77,6 @@ class TestEnums:
         """Test enums can be iterated."""
         roles = list(MemberRole)
         assert len(roles) == 3
-        assert MemberRole.owner in roles
+        assert MemberRole.creator in roles
         assert MemberRole.admin in roles
-        assert MemberRole.member in roles
+        assert MemberRole.user in roles

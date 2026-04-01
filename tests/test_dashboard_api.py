@@ -59,7 +59,12 @@ class TestDashboardAPI:
         db_session.add(member_user)
         db_session.flush()
 
-        org = Organization(name="Dash Org", owner_user_id=owner.id)
+        org = Organization(
+            name="Dash Org",
+            is_personal=False,
+            created_by_user_id=owner.id,
+            owner_user_id=owner.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -70,7 +75,7 @@ class TestDashboardAPI:
         )
         db_session.add(
             OrganizationMember(
-                organization_id=org.id, user_id=member_user.id, role=MemberRole.member
+                organization_id=org.id, user_id=member_user.id, role=MemberRole.user
             )
         )
 
@@ -175,6 +180,7 @@ class TestDashboardAPI:
         assert data["teamMemberCount"] == 2
         assert data["activityLast24Hours"] == 2
         assert len(data["recentActivity"]) == 3
+        assert data["workspaceRole"] == "admin"
         assert data["recentActivity"][0]["workflow"] == "code"
         assert data["recentActivity"][0]["itemNumber"] == 3
         assert data["recentActivity"][0]["githubFullName"] == "acme/svc"

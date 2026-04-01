@@ -33,6 +33,10 @@ class PROpenedForReview(BaseModel):
         default=None,
         description="installation.id from the webhook (preferred when minting app tokens)",
     )
+    github_sender_login: str | None = Field(
+        default=None,
+        description="sender.login from the webhook (for usage attribution)",
+    )
 
     @classmethod
     def from_github_pr_event(cls, data: dict[str, Any]) -> "PROpenedForReview | None":
@@ -79,6 +83,9 @@ class PROpenedForReview(BaseModel):
         except (TypeError, ValueError):
             github_installation_id = None
 
+        snd = data.get("sender") or {}
+        sender_login = snd.get("login") if isinstance(snd.get("login"), str) else None
+
         return cls(
             owner=owner,
             repo_name=repo_name,
@@ -92,4 +99,5 @@ class PROpenedForReview(BaseModel):
             head_branch=str(head_branch),
             head_sha=str(head_sha),
             github_installation_id=github_installation_id,
+            github_sender_login=sender_login,
         )

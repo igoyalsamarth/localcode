@@ -47,9 +47,8 @@ class User(Base):
         default=uuid4_default,
     )
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
-    username: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, index=True)
+    username: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    bio: Mapped[str | None] = mapped_column(String(160), nullable=True)
     github_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True, index=True)
     github_login: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
@@ -74,6 +73,12 @@ class Organization(Base):
         default=uuid4_default,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_personal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
     owner_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="RESTRICT"),
@@ -94,19 +99,39 @@ class Organization(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    owner: Mapped["User"] = relationship("User", back_populates="owned_organizations")
+    owner: Mapped["User"] = relationship(
+        "User",
+        back_populates="owned_organizations",
+        foreign_keys="Organization.owner_user_id",
+    )
+    creator: Mapped["User"] = relationship(
+        "User",
+        foreign_keys="Organization.created_by_user_id",
+    )
     members: Mapped[list["OrganizationMember"]] = relationship(
-        "OrganizationMember", back_populates="organization"
+        "OrganizationMember",
+        back_populates="organization",
+        cascade="all, delete-orphan",
     )
     github_installations: Mapped[list["GitHubInstallation"]] = relationship(
-        "GitHubInstallation", back_populates="organization"
+        "GitHubInstallation",
+        back_populates="organization",
+        cascade="all, delete-orphan",
     )
     repositories: Mapped[list["Repository"]] = relationship(
-        "Repository", back_populates="organization"
+        "Repository",
+        back_populates="organization",
+        cascade="all, delete-orphan",
     )
-    agents: Mapped[list["Agent"]] = relationship("Agent", back_populates="organization")
+    agents: Mapped[list["Agent"]] = relationship(
+        "Agent",
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
     subscriptions: Mapped[list["Subscription"]] = relationship(
-        "Subscription", back_populates="organization"
+        "Subscription",
+        back_populates="organization",
+        cascade="all, delete-orphan",
     )
 
 
@@ -342,6 +367,13 @@ class AgentWorkflowUsage(Base):
         nullable=True,
         index=True,
     )
+    trigger_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        doc="GitHub webhook sender mapped to a workspace member, when known.",
+    )
     repository_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("repositories.id", ondelete="SET NULL"),
@@ -391,6 +423,7 @@ class AgentWorkflowUsage(Base):
     )
 
     organization: Mapped["Organization | None"] = relationship()
+    trigger_user: Mapped["User | None"] = relationship(foreign_keys=[trigger_user_id])
     repository: Mapped["Repository | None"] = relationship()
     model: Mapped["Model | None"] = relationship("Model", back_populates="agent_workflow_usage")
 

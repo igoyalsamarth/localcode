@@ -23,9 +23,8 @@ def _orm_config() -> ConfigDict:
 
 class UserBase(BaseModel):
     email: str
-    username: str | None = None
+    username: str
     name: str | None = None
-    bio: str | None = None
     github_user_id: int | None = None
     github_login: str | None = None
     avatar_url: str | None = None
@@ -44,15 +43,10 @@ class User(UserBase):
     created_at: datetime | None = None
 
 
-class OnboardingRequest(BaseModel):
-    organization: str
-    username: str
-    fullName: str | None = None
-    bio: str | None = None
-
-
 class OrganizationBase(BaseModel):
     name: str
+    is_personal: bool = False
+    created_by_user_id: UUID
     owner_user_id: UUID
     github_installation_id: int | None = None
 

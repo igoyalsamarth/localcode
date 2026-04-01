@@ -4,9 +4,9 @@ from enum import StrEnum
 
 
 class MemberRole(StrEnum):
-    owner = "owner"
+    creator = "creator"
     admin = "admin"
-    member = "member"
+    user = "user"
 
 
 class AgentType(StrEnum):

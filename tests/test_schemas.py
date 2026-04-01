@@ -12,7 +12,6 @@ from model.schemas import (
     OrganizationCreate,
     Repository,
     RepositoryCreate,
-    OnboardingRequest,
 )
 
 
@@ -26,7 +25,6 @@ class TestSchemas:
             "email": "test@example.com",
             "username": "testuser",
             "name": "Test User",
-            "bio": "Test bio",
             "github_user_id": 12345,
             "github_login": "testuser",
             "avatar_url": "https://github.com/avatar.png",
@@ -67,6 +65,8 @@ class TestSchemas:
 
         org_data = {
             "name": "Test Org",
+            "is_personal": False,
+            "created_by_user_id": owner_id,
             "owner_user_id": owner_id,
             "github_installation_id": 12345,
         }
@@ -74,6 +74,7 @@ class TestSchemas:
         org = OrganizationCreate(**org_data)
 
         assert org.name == "Test Org"
+        assert org.created_by_user_id == owner_id
         assert org.owner_user_id == owner_id
         assert org.github_installation_id == 12345
 
@@ -86,6 +87,8 @@ class TestSchemas:
         org_data = {
             "id": org_id,
             "name": "Test Org",
+            "is_personal": True,
+            "created_by_user_id": owner_id,
             "owner_user_id": owner_id,
             "created_at": created_at,
         }
@@ -116,36 +119,6 @@ class TestSchemas:
         assert repo.owner == "test-owner"
         assert repo.private is True
         assert repo.default_branch == "main"
-
-    def test_onboarding_request_schema(self):
-        """Test OnboardingRequest schema validation."""
-        onboarding_data = {
-            "organization": "Test Org",
-            "username": "testuser",
-            "fullName": "Test User",
-            "bio": "Test bio",
-        }
-
-        onboarding = OnboardingRequest(**onboarding_data)
-
-        assert onboarding.organization == "Test Org"
-        assert onboarding.username == "testuser"
-        assert onboarding.fullName == "Test User"
-        assert onboarding.bio == "Test bio"
-
-    def test_onboarding_request_optional_fields(self):
-        """Test OnboardingRequest with optional fields."""
-        onboarding_data = {
-            "organization": "Test Org",
-            "username": "testuser",
-        }
-
-        onboarding = OnboardingRequest(**onboarding_data)
-
-        assert onboarding.organization == "Test Org"
-        assert onboarding.username == "testuser"
-        assert onboarding.fullName is None
-        assert onboarding.bio is None
 
     def test_schema_with_decimal_fields(self):
         """Test schemas with Decimal fields."""

@@ -15,7 +15,7 @@ from db import create_tables, session_scope
 from api import (
     health_router,
     auth_router,
-    onboarding_router,
+    workspaces_router,
     connections_router,
     agents_router,
     billing_router,
@@ -59,7 +59,7 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(auth_router)
-app.include_router(onboarding_router)
+app.include_router(workspaces_router)
 app.include_router(connections_router)
 app.include_router(agents_router)
 app.include_router(billing_router)

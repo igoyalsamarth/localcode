@@ -30,10 +30,15 @@ class TestWorkflowUsageRecord:
         return cm
 
     def test_record_issue_usage_inserts_row(self, db_session):
-        user = User(email="u@e.com", auth_provider="github")
+        user = User(email="u@e.com", username="u", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        org = Organization(name="O", owner_user_id=user.id)
+        org = Organization(
+            name="O",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
         repo = Repository(

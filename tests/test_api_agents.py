@@ -1,206 +1,155 @@
 """Integration tests for agents API endpoints."""
 
+from contextlib import contextmanager
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
-from uuid import uuid4
+from unittest.mock import patch
+
+from api.jwt_session import create_session_token
+from model.enums import AgentType, MemberRole
+from model.tables import Agent, Organization, OrganizationMember, Repository, User
 
 
 @pytest.mark.unit
 class TestAgentsAPIIntegration:
-    """Integration tests for agents endpoints."""
+    """Integration tests for /agents routes (coder, reviewer, usage)."""
 
-    @pytest.fixture
-    def client(self):
-        """Create test client."""
-        from app import app
-        return TestClient(app)
+    @staticmethod
+    def _patched_session_scope(session):
+        @contextmanager
+        def cm():
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
 
-    @pytest.fixture
-    def mock_user_with_agents(self, db_session):
-        """Create a mock user with organization and agents."""
-        from model.tables import User, Organization, Agent, Repository, RepositoryAgent, Model
-        from model.enums import AgentType
-        
+        return cm
+
+    @staticmethod
+    def _seed_org_with_repo(db_session):
         user = User(
-            email="test@example.com",
-            username="testuser",
+            email="agents-api@example.com",
+            username="agentsapi",
             auth_provider="github",
         )
         db_session.add(user)
         db_session.flush()
-        
         org = Organization(
-            name="Test Org",
+            name="Agents API Org",
+            is_personal=False,
+            created_by_user_id=user.id,
             owner_user_id=user.id,
         )
         db_session.add(org)
         db_session.flush()
-        
-        agent = Agent(
-            organization_id=org.id,
-            name="Test Agent",
-            type=AgentType.code,
+        db_session.add(
+            OrganizationMember(
+                organization_id=org.id,
+                user_id=user.id,
+                role=MemberRole.creator,
+            )
         )
-        db_session.add(agent)
-        
-        model = Model(
-            provider="openai",
-            name="gpt-4",
-        )
-        db_session.add(model)
         db_session.flush()
-        
         repo = Repository(
             organization_id=org.id,
-            github_repo_id=12345,
-            name="test-repo",
-            owner="test-owner",
+            github_repo_id=88_001,
+            name="svc",
+            owner="acme",
             default_branch="main",
         )
         db_session.add(repo)
-        db_session.flush()
-        
-        repo_agent = RepositoryAgent(
-            repository_id=repo.id,
-            agent_id=agent.id,
-            model_id=model.id,
-            enabled=True,
-        )
-        db_session.add(repo_agent)
         db_session.commit()
-        
-        return user, org, agent, repo
+        return user, org, repo
 
-    def test_list_agents_endpoint_exists(self, client):
-        """Test GET /agents endpoint exists."""
-        response = client.get("/agents")
-        
-        # Should return 200 or 404
-        assert response.status_code in [200, 404]
+    @pytest.fixture
+    def client(self):
+        from app import app
 
-    def test_list_agents_returns_json(self, client):
-        """Test agents endpoint returns JSON."""
-        response = client.get("/agents")
-        
-        assert "application/json" in response.headers["content-type"]
+        return TestClient(app)
 
-    def test_list_agents_returns_array(self, client, mock_user_with_agents):
-        """Test agents endpoint returns array."""
-        response = client.get("/agents")
-        
-        if response.status_code == 200:
-            data = response.json()
-            assert isinstance(data, list)
-
-    def test_get_agent_endpoint_exists(self, client):
-        """Test GET /agents/{agent_id} endpoint exists."""
-        agent_id = str(uuid4())
-        response = client.get(f"/agents/{agent_id}")
-        
-        # Should return 200, 404, or 422 (invalid UUID)
-        assert response.status_code in [200, 404, 422]
-
-    def test_get_agent_with_invalid_id(self, client):
-        """Test get agent with invalid UUID."""
-        response = client.get("/agents/invalid-uuid")
-        
-        # May return 404 or 422 depending on route matching
-        assert response.status_code in [404, 422]
-
-    def test_get_agent_returns_json(self, client):
-        """Test get agent returns JSON."""
-        agent_id = str(uuid4())
-        response = client.get(f"/agents/{agent_id}")
-        
-        assert "application/json" in response.headers["content-type"]
-
-    def test_list_repositories_endpoint_exists(self, client):
-        """Test GET /agents/repositories endpoint exists."""
-        response = client.get("/agents/repositories")
-        
-        assert response.status_code in [200, 404]
-
-    def test_list_repositories_returns_json(self, client):
-        """Test repositories endpoint returns JSON."""
-        response = client.get("/agents/repositories")
-        
-        assert "application/json" in response.headers["content-type"]
-
-    def test_list_repositories_returns_array(self, client, mock_user_with_agents):
-        """Test repositories endpoint returns array."""
-        response = client.get("/agents/repositories")
-        
-        if response.status_code == 200:
-            data = response.json()
-            assert isinstance(data, list)
-
-    def test_get_repository_endpoint_exists(self, client):
-        """Test GET /agents/repositories/{repo_id} endpoint exists."""
-        repo_id = str(uuid4())
-        response = client.get(f"/agents/repositories/{repo_id}")
-        
-        assert response.status_code in [200, 404, 422]
-
-    def test_get_repository_with_invalid_id(self, client):
-        """Test get repository with invalid UUID."""
-        response = client.get("/agents/repositories/invalid-uuid")
-        
-        # May return 404 or 422 depending on route matching
-        assert response.status_code in [404, 422]
-
-    def test_update_repository_agent_endpoint_exists(self, client):
-        """Test PUT /agents/repositories/{repo_id}/agents/{agent_id} endpoint exists."""
-        repo_id = str(uuid4())
-        agent_id = str(uuid4())
-        response = client.put(
-            f"/agents/repositories/{repo_id}/agents/{agent_id}",
-            json={"enabled": True}
-        )
-        
-        assert response.status_code in [200, 404, 422]
-
-    def test_update_repository_agent_requires_json(self, client):
-        """Test update repository agent requires JSON body."""
-        repo_id = str(uuid4())
-        agent_id = str(uuid4())
-        response = client.put(
-            f"/agents/repositories/{repo_id}/agents/{agent_id}"
-        )
-        
-        # May return 404 (not found) or 422 (validation error)
-        assert response.status_code in [404, 422]
-
-    def test_agents_endpoints_use_correct_prefix(self, client):
-        """Test agents endpoints use /agents prefix."""
+    def test_agents_routes_registered(self, client):
         routes = [route.path for route in client.app.routes]
-        agents_routes = [r for r in routes if r.startswith("/agents")]
-        
-        assert len(agents_routes) > 0
+        assert any(r.startswith("/agents/") for r in routes)
 
-    def test_agents_method_not_allowed(self, client):
-        """Test agents endpoint doesn't accept POST."""
-        response = client.post("/agents", json={})
-        
-        # May return 404 (no route) or 405 (method not allowed)
-        assert response.status_code in [404, 405]
+    def test_get_coder_settings_requires_auth(self, client):
+        r = client.get("/agents/coder/settings")
+        assert r.status_code == 401
 
-    def test_list_models_endpoint_exists(self, client):
-        """Test GET /agents/models endpoint exists."""
-        response = client.get("/agents/models")
-        
-        assert response.status_code in [200, 404]
+    def test_get_coder_settings_returns_json(self, client):
+        r = client.get("/agents/coder/settings")
+        assert "application/json" in r.headers["content-type"]
 
-    def test_list_models_returns_json(self, client):
-        """Test models endpoint returns JSON."""
-        response = client.get("/agents/models")
-        
-        assert "application/json" in response.headers["content-type"]
+    def test_get_coder_settings_ok_with_membership(
+        self, client, db_session, mock_env
+    ):
+        user, org, _repo = self._seed_org_with_repo(db_session)
+        token = create_session_token(
+            user_id=user.id,
+            org_id=org.id,
+            github_login="agentsapi",
+        )
+        with patch(
+            "api.agents.session_scope",
+            self._patched_session_scope(db_session),
+        ):
+            r = client.get(
+                "/agents/coder/settings",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert r.status_code == 200
+        data = r.json()
+        assert "repositories" in data
+        assert "configurations" in data
+        agents = (
+            db_session.query(Agent)
+            .filter_by(organization_id=org.id, type=AgentType.code)
+            .all()
+        )
+        assert len(agents) == 1
 
-    def test_list_models_returns_array(self, client, mock_user_with_agents):
-        """Test models endpoint returns array."""
-        response = client.get("/agents/models")
-        
-        if response.status_code == 200:
-            data = response.json()
-            assert isinstance(data, list)
+    def test_get_reviewer_settings_requires_auth(self, client):
+        r = client.get("/agents/reviewer/settings")
+        assert r.status_code == 401
+
+    def test_get_usage_requires_auth(self, client):
+        r = client.get("/agents/usage")
+        assert r.status_code == 401
+
+    def test_put_coder_repository_requires_auth(self, client):
+        r = client.put(
+            "/agents/coder/repositories/88001",
+            json={"enabled": True, "mode": "auto"},
+        )
+        assert r.status_code == 401
+
+    def test_put_coder_repository_requires_admin(
+        self, client, db_session, mock_env
+    ):
+        """Creator has admin+ and can update repository config."""
+        user, org, repo = self._seed_org_with_repo(db_session)
+        token = create_session_token(
+            user_id=user.id,
+            org_id=org.id,
+            github_login="agentsapi",
+        )
+        with patch(
+            "api.agents.session_scope",
+            self._patched_session_scope(db_session),
+        ):
+            r = client.put(
+                f"/agents/coder/repositories/{repo.github_repo_id}",
+                json={"enabled": True, "mode": "auto"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["enabled"] is True
+        assert body["mode"] == "auto"
+
+    def test_agents_collection_post_not_defined(self, client):
+        """No POST /agents route."""
+        r = client.post("/agents", json={})
+        assert r.status_code == 404

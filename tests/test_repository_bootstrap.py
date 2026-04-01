@@ -73,11 +73,16 @@ class TestRepositoryBootstrap:
 
     def test_get_or_create_coder_agent_creates_new(self, db_session):
         """Test creating a new coder agent."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -90,11 +95,16 @@ class TestRepositoryBootstrap:
 
     def test_get_or_create_coder_agent_returns_existing(self, db_session):
         """Test returning existing coder agent."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -113,11 +123,16 @@ class TestRepositoryBootstrap:
 
     def test_get_or_create_review_agent_creates_new(self, db_session):
         """Test creating a new review agent."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -130,11 +145,16 @@ class TestRepositoryBootstrap:
 
     def test_get_or_create_review_agent_returns_existing(self, db_session):
         """Test returning existing review agent."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -153,11 +173,16 @@ class TestRepositoryBootstrap:
 
     def test_upsert_repository_from_github_creates_new(self, db_session):
         """Test creating a new repository from GitHub payload."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -181,11 +206,16 @@ class TestRepositoryBootstrap:
 
     def test_upsert_repository_from_github_updates_existing(self, db_session):
         """Test updating an existing repository from GitHub payload."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -218,11 +248,16 @@ class TestRepositoryBootstrap:
 
     def test_upsert_repository_from_github_missing_id_raises(self, db_session):
         """Test that missing repository ID raises ValueError."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -233,11 +268,16 @@ class TestRepositoryBootstrap:
 
     def test_upsert_repository_from_github_missing_name_raises(self, db_session):
         """Test that missing repository name raises ValueError."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -248,11 +288,16 @@ class TestRepositoryBootstrap:
 
     def test_upsert_repository_from_github_with_fallback_owner(self, db_session):
         """Test repository creation with fallback owner."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -273,11 +318,16 @@ class TestRepositoryBootstrap:
 
     def test_ensure_default_coder_repository_agent_creates_new(self, db_session):
         """Test creating default coder repository agent."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -305,11 +355,16 @@ class TestRepositoryBootstrap:
 
     def test_ensure_default_coder_repository_agent_skips_existing(self, db_session):
         """Test that existing coder repository agent is not duplicated."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -362,11 +417,16 @@ class TestRepositoryBootstrap:
 
     def test_ensure_default_review_repository_agent_creates_new(self, db_session):
         """Test creating default review repository agent."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -394,11 +454,16 @@ class TestRepositoryBootstrap:
 
     def test_ensure_default_review_repository_agent_skips_existing(self, db_session):
         """Test that existing review repository agent is not duplicated."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 

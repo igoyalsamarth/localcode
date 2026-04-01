@@ -7,8 +7,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from api.jwt_session import create_session_token
-from model.enums import AgentType
-from model.tables import Agent, Organization, Repository, User
+from model.enums import AgentType, MemberRole
+from model.tables import Agent, Organization, OrganizationMember, Repository, User
 
 
 @pytest.fixture
@@ -42,8 +42,21 @@ class TestAgentsReviewerSettingsAPI:
         )
         db_session.add(user)
         db_session.flush()
-        org = Organization(name="Rev Org", owner_user_id=user.id)
+        org = Organization(
+            name="Rev Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
+        db_session.flush()
+        db_session.add(
+            OrganizationMember(
+                organization_id=org.id,
+                user_id=user.id,
+                role=MemberRole.creator,
+            )
+        )
         db_session.flush()
         repo = Repository(
             organization_id=org.id,

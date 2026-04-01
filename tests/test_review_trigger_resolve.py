@@ -3,9 +3,10 @@
 import pytest
 
 from model.enums import AgentType
-from model.tables import Agent, Model, Organization, Repository, RepositoryAgent, User
+from model.tables import Agent, Model, Repository, RepositoryAgent
 from services.github.review_trigger import resolve_review_pr_work
 from services.github.trigger_modes import TRIGGER_MODE_AUTO, TRIGGER_MODE_TAG
+from tests.db_seed import seed_user, seed_workspace
 
 
 def _pr_payload(*, action: str, repo_id: int = 42, label_name: str | None = None):
@@ -33,12 +34,8 @@ def _pr_payload(*, action: str, repo_id: int = 42, label_name: str | None = None
 @pytest.mark.unit
 class TestResolveReviewPrWork:
     def _seed(self, db_session, *, mode: str = TRIGGER_MODE_TAG, enabled: bool = True):
-        user = User(email="u@e.com", auth_provider="github")
-        db_session.add(user)
-        db_session.flush()
-        org = Organization(name="O", owner_user_id=user.id)
-        db_session.add(org)
-        db_session.flush()
+        user = seed_user(db_session)
+        org = seed_workspace(db_session, user, name="O")
         repo = Repository(
             organization_id=org.id,
             github_repo_id=42,
@@ -71,12 +68,8 @@ class TestResolveReviewPrWork:
         assert resolve_review_pr_work(db_session, _pr_payload(action="closed")) is None
 
     def test_no_repository_agent_returns_none(self, db_session):
-        user = User(email="u@e.com", auth_provider="github")
-        db_session.add(user)
-        db_session.flush()
-        org = Organization(name="O", owner_user_id=user.id)
-        db_session.add(org)
-        db_session.flush()
+        user = seed_user(db_session)
+        org = seed_workspace(db_session, user, name="O")
         db_session.add(
             Repository(
                 organization_id=org.id,

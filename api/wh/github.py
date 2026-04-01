@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from db import session_scope
 from logger import get_logger
-from model.tables import User, Organization, GitHubInstallation
+from model.tables import GitHubInstallation, Organization
 from services.github.coder_trigger import resolve_coder_issue_work
 from services.github.coder_workflow import (
     ensure_greagent_labels_on_repository,
@@ -27,6 +27,7 @@ from services.github.repository_bootstrap import (
     ensure_default_review_repository_agent,
     upsert_repository_from_github,
 )
+from services.github.installation_sync import sync_repositories_from_webhook_payload
 from services.github.webhook_signature import verify_github_webhook_signature
 from services.github.agent_wallet_gate import (
     notify_insufficient_wallet_for_issue,
@@ -41,133 +42,62 @@ router = APIRouter(prefix="/webhook", tags=["webhooks"])
 
 
 def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
+    """
+    GitHub sends this before the user returns to our SPA.
+
+    Workspace binding is done in ``POST /connections/github/installation/callback`` using
+    ``state`` + session JWT. If the DB row already exists (callback completed first), we only
+    sync repositories from this payload.
+    """
     installation = data.get("installation", {})
     installation_id = installation.get("id")
     account = installation.get("account", {})
     account_login = account.get("login")
     action = data.get("action")
-
     account_type = account.get("type")
     account_avatar_url = account.get("avatar_url")
     permissions = installation.get("permissions", {})
     repositories = data.get("repositories", [])
 
     logger.info(
-        "GitHub App installed by: %s, installation_id: %s, type: %s",
+        "GitHub App installation.created: account=%s installation_id=%s type=%s",
         account_login,
         installation_id,
         account_type,
     )
 
     with session_scope() as session:
-        stmt = select(User).where(User.github_login == account_login)
-        user = session.execute(stmt).scalar_one_or_none()
+        stmt = select(GitHubInstallation).where(
+            GitHubInstallation.github_installation_id == installation_id
+        )
+        existing = session.execute(stmt).scalar_one_or_none()
 
-        if user:
-            stmt = select(Organization).where(Organization.owner_user_id == user.id)
-            org = session.execute(stmt).scalar_one_or_none()
+        if not existing:
+            logger.info(
+                "installation_id=%s pending SPA callback (no DB row yet); "
+                "repositories will sync when the user completes install for their workspace",
+                installation_id,
+            )
+            return {
+                "status": "deferred",
+                "action": action,
+                "installation_id": installation_id,
+            }
 
-            if org:
-                stmt = select(GitHubInstallation).where(
-                    GitHubInstallation.github_installation_id == installation_id
-                )
-                existing = session.execute(stmt).scalar_one_or_none()
+        existing.account_name = account_login or existing.account_name
+        existing.account_type = account_type or existing.account_type
+        existing.account_avatar_url = account_avatar_url or existing.account_avatar_url
+        existing.permissions = permissions or existing.permissions
 
-                if not existing:
-                    installation_record = GitHubInstallation(
-                        organization_id=org.id,
-                        github_installation_id=installation_id,
-                        account_name=account_login,
-                        account_type=account_type,
-                        account_avatar_url=account_avatar_url,
-                        permissions=permissions,
-                    )
-                    session.add(installation_record)
-                    org.github_installation_id = installation_id
-
-                    from model.tables import Repository
-
-                    for repo in repositories:
-                        repo_id = repo.get("id")
-                        repo_name = repo.get("name")
-                        repo_full_name = repo.get("full_name")
-                        repo_private = repo.get("private", False)
-                        repo_default_branch = repo.get("default_branch", "main")
-
-                        stmt = select(Repository).where(
-                            Repository.organization_id == org.id,
-                            Repository.github_repo_id == repo_id,
-                        )
-                        existing_repo = session.execute(stmt).scalar_one_or_none()
-
-                        if not existing_repo:
-                            owner = (
-                                repo_full_name.split("/")[0]
-                                if repo_full_name and "/" in repo_full_name
-                                else account_login
-                            )
-                            new_repo = Repository(
-                                organization_id=org.id,
-                                github_repo_id=repo_id,
-                                name=repo_name,
-                                owner=owner,
-                                private=repo_private,
-                                default_branch=repo_default_branch,
-                                active=True,
-                            )
-                            session.add(new_repo)
-                            session.flush()
-                            ensure_default_coder_repository_agent(session, new_repo)
-                            ensure_default_review_repository_agent(session, new_repo)
-                        else:
-                            ensure_default_coder_repository_agent(
-                                session, existing_repo
-                            )
-                            ensure_default_review_repository_agent(
-                                session, existing_repo
-                            )
-
-                    session.commit()
-                    logger.info(
-                        "GitHub App installation stored for org: %s with %s repositories",
-                        org.name,
-                        len(repositories),
-                    )
-                    try:
-                        install_tok = get_api_token_for_installation(
-                            int(installation_id)
-                        )
-                    except Exception:
-                        install_tok = None
-                        logger.exception(
-                            "No installation token for labels (installation_id=%s)",
-                            installation_id,
-                        )
-                    if install_tok:
-                        for repo in repositories:
-                            full_name = repo.get("full_name") or ""
-                            if "/" not in full_name:
-                                continue
-                            owner, name = full_name.split("/", 1)
-                            try:
-                                ensure_greagent_labels_on_repository(
-                                    owner, name, access_token=install_tok
-                                )
-                                ensure_greagent_review_labels_on_repository(
-                                    owner, name, access_token=install_tok
-                                )
-                            except Exception:
-                                logger.exception(
-                                    "Failed to ensure greagent labels for %s", full_name
-                                )
-                else:
-                    logger.info(
-                        "GitHub App installation already exists: %s", installation_id
-                    )
-            else:
-                logger.warning("No organization found for user: %s", account_login)
-        else:
-            logger.warning("No user found with GitHub login: %s", account_login)
+        if repositories:
+            sync_repositories_from_webhook_payload(
+                session,
+                existing.organization_id,
+                int(installation_id),
+                repositories,
+                account_login,
+            )
+        session.commit()
 
     return {
         "status": "received",
@@ -188,7 +118,11 @@ def _installation_deleted(data: dict[str, Any]) -> dict[str, Any]:
         installation_record = session.execute(stmt).scalar_one_or_none()
 
         if installation_record:
+            org_id = installation_record.organization_id
             session.delete(installation_record)
+            org = session.get(Organization, org_id)
+            if org is not None and org.github_installation_id == installation_id:
+                org.github_installation_id = None
             session.commit()
             logger.info("GitHub App installation deleted: %s", installation_id)
 
@@ -375,6 +309,7 @@ async def _handle_issues_event(
         "issue_title": work.issue_title,
         "issue_body": work.issue_body,
         "github_installation_id": work.github_installation_id,
+        "github_sender_login": work.github_sender_login,
     }
 
     process_github_issue.send(issue_data)
@@ -462,6 +397,7 @@ async def _handle_pull_request_event(
         "head_branch": work.head_branch,
         "head_sha": work.head_sha,
         "github_installation_id": work.github_installation_id,
+        "github_sender_login": work.github_sender_login,
     }
 
     process_github_pr_review.send(pr_data)

@@ -32,6 +32,10 @@ class IssueOpenedForCoder(BaseModel):
         default=None,
         description="installation.id from the webhook (preferred when minting app tokens)",
     )
+    github_sender_login: str | None = Field(
+        default=None,
+        description="sender.login from the webhook (for usage attribution)",
+    )
 
     @classmethod
     def from_github_issues_event(cls, data: dict[str, Any]) -> "IssueOpenedForCoder | None":
@@ -69,6 +73,9 @@ class IssueOpenedForCoder(BaseModel):
         except (TypeError, ValueError):
             github_installation_id = None
 
+        snd = data.get("sender") or {}
+        sender_login = snd.get("login") if isinstance(snd.get("login"), str) else None
+
         return cls(
             owner=owner,
             repo_name=repo_name,
@@ -79,6 +86,7 @@ class IssueOpenedForCoder(BaseModel):
             issue_title=str(issue_title),
             issue_body=issue_body,
             github_installation_id=github_installation_id,
+            github_sender_login=sender_login,
         )
 
     @classmethod

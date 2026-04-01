@@ -18,7 +18,13 @@ from agents.usage_callback import AgentLlmUsageCallbackHandler
 from db import session_scope
 from logger import get_logger
 from model.enums import GitHubWorkflowKind
-from model.tables import AgentWorkflowUsage, Model, Repository
+from model.tables import (
+    AgentWorkflowUsage,
+    Model,
+    OrganizationMember,
+    Repository,
+    User,
+)
 from services.wallet import (
     deduct_organization_wallet_for_llm_run,
     usage_charge_usd_from_llm_cost,
@@ -94,6 +100,31 @@ def _resolve_repo_by_owner_name(
     return repo.id, repo.organization_id
 
 
+def _resolve_trigger_user_id(
+    session,
+    owner: str,
+    repo_name: str,
+    sender_login: str | None,
+) -> UUID | None:
+    if not sender_login or not sender_login.strip():
+        return None
+    repo_id, org_id = _resolve_repo_by_owner_name(session, owner, repo_name)
+    if org_id is None:
+        return None
+    user = session.execute(
+        select(User).where(User.github_login == sender_login.strip())
+    ).scalar_one_or_none()
+    if user is None:
+        return None
+    member = session.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.user_id == user.id,
+        )
+    ).scalar_one_or_none()
+    return user.id if member else None
+
+
 def record_github_workflow_usage(
     *,
     workflow: GitHubWorkflowKind,
@@ -104,6 +135,7 @@ def record_github_workflow_usage(
     run_id: str,
     usage_cb: AgentLlmUsageCallbackHandler,
     provider: str,
+    github_sender_login: str | None = None,
 ) -> None:
     """
     Insert one ``AgentWorkflowUsage`` row after an agent run.
@@ -118,6 +150,9 @@ def record_github_workflow_usage(
     try:
         with session_scope() as session:
             repo_id, org_id = _resolve_repo_by_owner_name(session, owner, repo_name)
+            trigger_uid = _resolve_trigger_user_id(
+                session, owner, repo_name, github_sender_login
+            )
             llm_cost_usd, catalog_model = _compute_llm_cost_usd_and_catalog_model(
                 session, provider, raw
             )
@@ -133,6 +168,7 @@ def record_github_workflow_usage(
             row = AgentWorkflowUsage(
                 workflow=workflow,
                 organization_id=org_id,
+                trigger_user_id=trigger_uid,
                 repository_id=repo_id,
                 github_full_name=github_full_name,
                 github_item_number=github_item_number,
@@ -183,6 +219,7 @@ def record_issue_workflow_usage(
         run_id=run_id,
         usage_cb=usage_cb,
         provider=provider,
+        github_sender_login=issue.github_sender_login,
     )
 
 
@@ -202,4 +239,5 @@ def record_pr_workflow_usage(
         run_id=run_id,
         usage_cb=usage_cb,
         provider=provider,
+        github_sender_login=pr.github_sender_login,
     )

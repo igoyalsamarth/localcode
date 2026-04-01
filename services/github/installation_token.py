@@ -120,6 +120,64 @@ def get_installation_access_token(installation_id: int) -> str:
     return tok
 
 
+def fetch_app_installation_json(installation_id: int) -> dict[str, Any]:
+    """``GET /app/installations/{id}`` using the GitHub App JWT (metadata only)."""
+    jwt_token = create_app_jwt()
+    url = f"{_GITHUB_API}/app/installations/{installation_id}"
+    r = requests.get(
+        url,
+        headers={
+            "Authorization": f"Bearer {jwt_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
+        },
+        timeout=60,
+    )
+    if not r.ok:
+        logger.error(
+            "GitHub GET %s failed: status=%s installation_id=%s body=%s",
+            url,
+            r.status_code,
+            installation_id,
+            (r.text or "")[:4000],
+        )
+    r.raise_for_status()
+    return r.json()
+
+
+def list_installation_repositories(installation_id: int) -> list[dict[str, Any]]:
+    """All repositories visible to this installation (paginated)."""
+    token = get_installation_access_token(installation_id)
+    all_repos: list[dict[str, Any]] = []
+    page = 1
+    while True:
+        r = requests.get(
+            f"{_GITHUB_API}/installation/repositories",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
+            },
+            params={"per_page": 100, "page": page},
+            timeout=60,
+        )
+        if not r.ok:
+            logger.error(
+                "GitHub GET installation/repositories failed: status=%s installation_id=%s body=%s",
+                r.status_code,
+                installation_id,
+                (r.text or "")[:4000],
+            )
+        r.raise_for_status()
+        data = r.json()
+        batch = data.get("repositories") or []
+        all_repos.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return all_repos
+
+
 def _sync_org_installation_id_from_webhook(
     owner: str, repo_name: str, webhook_installation_id: int
 ) -> None:

@@ -47,6 +47,7 @@ class TestModels:
         """Test Organization model creation."""
         user = User(
             email="test@example.com",
+            username="testuser",
             auth_provider="github",
         )
         db_session.add(user)
@@ -54,6 +55,8 @@ class TestModels:
 
         org = Organization(
             name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
             owner_user_id=user.id,
             github_installation_id=12345,
         )
@@ -67,32 +70,42 @@ class TestModels:
 
     def test_organization_member_model_creation(self, db_session):
         """Test OrganizationMember model creation."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
         member = OrganizationMember(
             organization_id=org.id,
             user_id=user.id,
-            role=MemberRole.owner,
+            role=MemberRole.creator,
         )
         db_session.add(member)
         db_session.commit()
 
         assert member.id is not None
-        assert member.role == MemberRole.owner
+        assert member.role == MemberRole.creator
 
     def test_repository_model_creation(self, db_session):
         """Test Repository model creation."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -113,11 +126,16 @@ class TestModels:
 
     def test_github_installation_model_creation(self, db_session):
         """Test GitHubInstallation model creation."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -149,11 +167,16 @@ class TestModels:
 
     def test_agent_model_creation(self, db_session):
         """Test Agent model creation."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -170,11 +193,16 @@ class TestModels:
 
     def test_subscription_model_creation(self, db_session):
         """Test Subscription model creation."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -195,11 +223,16 @@ class TestModels:
 
     def test_user_organization_relationship(self, db_session):
         """Test User-Organization relationship."""
-        user = User(email="test@example.com", auth_provider="github")
+        user = User(email="test@example.com", username="testuser", auth_provider="github")
         db_session.add(user)
         db_session.flush()
 
-        org = Organization(name="Test Org", owner_user_id=user.id)
+        org = Organization(
+            name="Test Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.commit()
 

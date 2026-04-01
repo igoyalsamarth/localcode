@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from api.deps import get_current_org_id, get_current_user_id
+from api.user_org import require_org_membership, require_workspace_role
 from constants import (
     CLIENT_URL,
     DODO_PAYMENTS_API_KEY,
@@ -22,6 +23,7 @@ from constants import (
 )
 from db import session_scope
 from logger import get_logger
+from model.enums import MemberRole
 from model.tables import BillingWebhookDelivery, Organization, Subscription, User
 from services.dodo_billing import apply_unwrapped_webhook_event
 from services.wallet import organization_spendable_balance_usd
@@ -122,6 +124,8 @@ async def create_checkout_session(
         )
 
     with session_scope() as db:
+        _, _, member = require_org_membership(db, user_id, org_id)
+        require_workspace_role(member, MemberRole.admin)
         stmt = select(User).where(User.id == user_id)
         user = db.execute(stmt).scalar_one_or_none()
         if not user:
@@ -205,6 +209,8 @@ async def create_topup_checkout_session(
         )
 
     with session_scope() as db:
+        _, _, member = require_org_membership(db, user_id, org_id)
+        require_workspace_role(member, MemberRole.admin)
         stmt = select(User).where(User.id == user_id)
         user = db.execute(stmt).scalar_one_or_none()
         if not user:
@@ -251,9 +257,13 @@ async def create_topup_checkout_session(
 
 
 @router.get("/subscription", response_model=BillingSubscriptionResponse)
-async def get_billing_subscription(org_id: UUID = Depends(get_current_org_id)):
+async def get_billing_subscription(
+    user_id: UUID = Depends(get_current_user_id),
+    org_id: UUID = Depends(get_current_org_id),
+):
     """Return Dodo linkage, spendable wallet total (paid + active promo), and subscription."""
     with session_scope() as db:
+        require_org_membership(db, user_id, org_id)
         org = db.get(Organization, org_id)
         if org is None:
             raise HTTPException(status_code=404, detail="Organization not found")
@@ -292,9 +302,14 @@ async def get_billing_subscription(org_id: UUID = Depends(get_current_org_id)):
 
 
 @router.post("/customer-portal-session", response_model=CustomerPortalSessionResponse)
-async def create_customer_portal_session(org_id: UUID = Depends(get_current_org_id)):
+async def create_customer_portal_session(
+    user_id: UUID = Depends(get_current_user_id),
+    org_id: UUID = Depends(get_current_org_id),
+):
     """Create a short-lived Dodo customer portal URL for the org’s paying customer."""
     with session_scope() as db:
+        _, _, member = require_org_membership(db, user_id, org_id)
+        require_workspace_role(member, MemberRole.admin)
         org = db.get(Organization, org_id)
         if org is None or not org.dodo_customer_id:
             raise HTTPException(

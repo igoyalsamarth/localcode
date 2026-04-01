@@ -3,9 +3,10 @@
 import pytest
 
 from model.enums import AgentType
-from model.tables import Agent, Model, Organization, Repository, RepositoryAgent, User
+from model.tables import Agent, Model, Repository, RepositoryAgent
 from services.github.coder_trigger import resolve_coder_issue_work
 from services.github.trigger_modes import TRIGGER_MODE_AUTO
+from tests.db_seed import seed_user, seed_workspace
 
 
 def _issue_payload(*, action: str, repo_id: int = 99, label_name: str | None = None):
@@ -31,12 +32,8 @@ def _issue_payload(*, action: str, repo_id: int = 99, label_name: str | None = N
 @pytest.mark.unit
 class TestResolveCoderIssueWork:
     def _seed(self, db_session, *, mode: str = TRIGGER_MODE_AUTO, enabled: bool = True):
-        user = User(email="u@e.com", auth_provider="github")
-        db_session.add(user)
-        db_session.flush()
-        org = Organization(name="O", owner_user_id=user.id)
-        db_session.add(org)
-        db_session.flush()
+        user = seed_user(db_session)
+        org = seed_workspace(db_session, user, name="O")
         repo = Repository(
             organization_id=org.id,
             github_repo_id=99,

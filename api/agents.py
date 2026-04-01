@@ -9,11 +9,11 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
 from sqlalchemy import String, cast, distinct, func, select
 
-from api.deps import get_current_user_id
-from api.user_org import require_user_and_owned_org
+from api.deps import get_current_org_id, get_current_user_id
+from api.user_org import require_org_membership, require_workspace_role
 from db import session_scope
 from logger import get_logger
-from model.enums import AgentType, GitHubWorkflowKind
+from model.enums import AgentType, GitHubWorkflowKind, MemberRole
 from model.tables import Agent, AgentWorkflowUsage, Repository, RepositoryAgent
 from services.github.coder_workflow import ensure_greagent_labels_on_repository
 from services.github.repository_bootstrap import get_or_create_default_model
@@ -199,14 +199,17 @@ def _update_repository_agent_config(
 
 
 @router.get("/coder/settings")
-async def get_coder_settings(user_id: UUID = Depends(get_current_user_id)):
+async def get_coder_settings(
+    user_id: UUID = Depends(get_current_user_id),
+    org_id: UUID = Depends(get_current_org_id),
+):
     """
     Get repositories and their configurations for the coder agent.
 
     Returns all repositories in the user's organization and their agent configurations.
     """
     with session_scope() as session:
-        _, org = require_user_and_owned_org(session, user_id)
+        _, org, _ = require_org_membership(session, user_id, org_id)
         agent = _ensure_org_agent(session, org, AgentType.code)
         return _agent_settings_payload(session, org, agent)
 
@@ -216,10 +219,12 @@ async def update_coder_repository_config(
     repository_id: int = Path(...),
     config: RepositoryConfigUpdate = Body(...),
     user_id: UUID = Depends(get_current_user_id),
+    org_id: UUID = Depends(get_current_org_id),
 ):
     """Update repository configuration for the coder agent."""
     with session_scope() as session:
-        _, org = require_user_and_owned_org(session, user_id)
+        _, org, member = require_org_membership(session, user_id, org_id)
+        require_workspace_role(member, MemberRole.admin)
         return _update_repository_agent_config(
             session,
             org,
@@ -231,14 +236,17 @@ async def update_coder_repository_config(
 
 
 @router.get("/reviewer/settings")
-async def get_reviewer_settings(user_id: UUID = Depends(get_current_user_id)):
+async def get_reviewer_settings(
+    user_id: UUID = Depends(get_current_user_id),
+    org_id: UUID = Depends(get_current_org_id),
+):
     """
     Get repositories and their configurations for the reviewer agent.
 
     Same response shape as ``GET /agents/coder/settings``.
     """
     with session_scope() as session:
-        _, org = require_user_and_owned_org(session, user_id)
+        _, org, _ = require_org_membership(session, user_id, org_id)
         agent = _ensure_org_agent(session, org, AgentType.review)
         return _agent_settings_payload(session, org, agent)
 
@@ -248,10 +256,12 @@ async def update_reviewer_repository_config(
     repository_id: int = Path(...),
     config: RepositoryConfigUpdate = Body(...),
     user_id: UUID = Depends(get_current_user_id),
+    org_id: UUID = Depends(get_current_org_id),
 ):
     """Update repository configuration for the reviewer agent."""
     with session_scope() as session:
-        _, org = require_user_and_owned_org(session, user_id)
+        _, org, member = require_org_membership(session, user_id, org_id)
+        require_workspace_role(member, MemberRole.admin)
         return _update_repository_agent_config(
             session,
             org,
@@ -268,10 +278,13 @@ def _workflow_usage_payload(
     repo_limit: int,
     item_limit: int,
     workflow: GitHubWorkflowKind | None,
+    trigger_user_id: UUID | None = None,
 ) -> dict:
     filt = AgentWorkflowUsage.organization_id == org_id
     if workflow is not None:
         filt = filt & (AgentWorkflowUsage.workflow == workflow)
+    if trigger_user_id is not None:
+        filt = filt & (AgentWorkflowUsage.trigger_user_id == trigger_user_id)
 
     with session_scope() as session:
         summary_row = session.execute(
@@ -412,6 +425,7 @@ def _workflow_usage_payload(
 @router.get("/usage")
 async def get_workflow_usage(
     user_id: UUID = Depends(get_current_user_id),
+    org_id: UUID = Depends(get_current_org_id),
     workflow: GitHubWorkflowKind | None = Query(
         None,
         description="Filter by workflow: code (issues) or review (PRs). Omit for all.",
@@ -433,12 +447,13 @@ async def get_workflow_usage(
     ``items`` include the same ``workflow`` plus ``itemNumber`` (issue or PR number).
     """
     with session_scope() as session:
-        _, org = require_user_and_owned_org(session, user_id)
-        org_id = org.id
+        _, _, member = require_org_membership(session, user_id, org_id)
+        uid_filter = user_id if member.role == MemberRole.user else None
 
     return _workflow_usage_payload(
         org_id=org_id,
         repo_limit=repo_limit,
         item_limit=item_limit,
         workflow=workflow,
+        trigger_user_id=uid_filter,
     )

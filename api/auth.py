@@ -15,7 +15,7 @@ from constants import (
 )
 from api.jwt_session import create_session_token
 from db import session_scope
-from services import create_or_update_user, get_or_create_organization
+from services import create_or_update_user, get_or_create_personal_workspace
 from logger import get_logger
 from urllib.parse import urlencode
 
@@ -151,10 +151,7 @@ async def github_callback(code: str = Query(...), state: Optional[str] = Query(N
                 avatar_url=avatar_url,
             )
 
-            organization = get_or_create_organization(
-                session=session,
-                user=user,
-            )
+            organization = get_or_create_personal_workspace(session=session, user=user)
 
             session.commit()
 

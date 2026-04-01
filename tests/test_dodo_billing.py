@@ -17,10 +17,15 @@ from services.dodo_billing import apply_unwrapped_webhook_event, sync_subscripti
 @pytest.mark.unit
 class TestDodoBillingSync:
     def test_sync_creates_subscription_and_sets_org_customer(self, db_session):
-        user = User(email="buyer@example.com", auth_provider="github")
+        user = User(email="buyer@example.com", username="buyer", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        org = Organization(name="Org", owner_user_id=user.id)
+        org = Organization(
+            name="Org",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -53,10 +58,16 @@ class TestDodoBillingSync:
         assert row.dodo_quantity == 3
 
     def test_sync_updates_existing_row(self, db_session):
-        user = User(email="u@example.com", auth_provider="github")
+        user = User(email="u@example.com", username="u", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        org = Organization(name="O", owner_user_id=user.id, dodo_customer_id="cus_x")
+        org = Organization(
+            name="O",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+            dodo_customer_id="cus_x",
+        )
         db_session.add(org)
         db_session.flush()
         sub = Subscription(
@@ -91,10 +102,15 @@ class TestDodoBillingSync:
         assert row.dodo_product_id == "pdt_new"
 
     def test_apply_subscription_active_event(self, db_session):
-        user = User(email="e@example.com", auth_provider="github")
+        user = User(email="e@example.com", username="e", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        org = Organization(name="E", owner_user_id=user.id)
+        org = Organization(
+            name="E",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -125,10 +141,15 @@ class TestDodoBillingSync:
         assert org.wallet_balance_usd == Decimal("0")
 
     def test_subscription_renewed_credits_wallet(self, db_session):
-        user = User(email="r@example.com", auth_provider="github")
+        user = User(email="r@example.com", username="r", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        org = Organization(name="R", owner_user_id=user.id)
+        org = Organization(
+            name="R",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.flush()
 
@@ -153,10 +174,15 @@ class TestDodoBillingSync:
         assert org.wallet_balance_usd == Decimal("10.00")
 
     def test_payment_succeeded_topup_credits_wallet(self, db_session):
-        user = User(email="t@example.com", auth_provider="github")
+        user = User(email="t@example.com", username="t", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        org = Organization(name="T", owner_user_id=user.id)
+        org = Organization(
+            name="T",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.commit()
 
@@ -177,10 +203,15 @@ class TestDodoBillingSync:
 
     def test_payment_succeeded_topup_ignores_noncanonical_flag(self, db_session):
         """Only ``greagent_wallet_topup: \"true\"`` credits the wallet (no alternate spellings)."""
-        user = User(email="t2@example.com", auth_provider="github")
+        user = User(email="t2@example.com", username="t2", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        org = Organization(name="T2", owner_user_id=user.id)
+        org = Organization(
+            name="T2",
+            is_personal=False,
+            created_by_user_id=user.id,
+            owner_user_id=user.id,
+        )
         db_session.add(org)
         db_session.commit()
 
