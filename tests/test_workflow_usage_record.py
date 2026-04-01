@@ -59,6 +59,7 @@ class TestWorkflowUsageRecord:
             repo_name="r",
             full_name="o/r",
             repo_url="https://github.com/o/r",
+            github_repo_id=1,
             issue_number=9,
             issue_title="t",
             issue_body="",

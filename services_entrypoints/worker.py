@@ -1,6 +1,6 @@
 """
 Service 3: Worker Service
-Dramatiq worker that consumes GitHub deep-agent tasks from RabbitMQ (issue + PR queues).
+Dramatiq worker that consumes GitHub deep-agent tasks from RabbitMQ (``github_agent`` queue).
 Multiple instances can run in parallel for horizontal scaling.
 """
 
@@ -19,8 +19,8 @@ def main() -> None:
     """
     Start the Dramatiq worker process.
 
-    Loads ``task_queue.tasks`` so workers consume both ``github_coder`` and ``github_reviewer``
-    queues (and any other actors defined in that module).
+    Loads ``task_queue.tasks`` so workers consume the shared ``github_agent`` queue (coder and
+    reviewer actors) and any other actors defined in that module.
 
     ``create_tables`` runs in each worker **subprocess** via
     ``WorkerProcessDbMiddleware.after_process_boot`` (see ``task_queue.broker``), not here,

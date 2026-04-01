@@ -22,6 +22,7 @@ class PROpenedForReview(BaseModel):
     repo_name: str = Field(..., description="Short repository name")
     full_name: str = Field(..., description="owner/repo")
     repo_url: str = Field(..., description="HTTPS clone/browse URL")
+    github_repo_id: int = Field(..., description="repository.id from the webhook")
     pr_number: int
     pr_title: str
     pr_body: str = ""
@@ -46,6 +47,14 @@ class PROpenedForReview(BaseModel):
         pr_title = pr.get("title")
 
         if not owner or not repo_name or pr_number is None or pr_title is None:
+            return None
+
+        raw_repo_id = repo.get("id")
+        try:
+            github_repo_id = int(raw_repo_id) if raw_repo_id is not None else None
+        except (TypeError, ValueError):
+            github_repo_id = None
+        if github_repo_id is None:
             return None
 
         if not full_name:
@@ -75,6 +84,7 @@ class PROpenedForReview(BaseModel):
             repo_name=repo_name,
             full_name=full_name,
             repo_url=f"https://github.com/{full_name}",
+            github_repo_id=github_repo_id,
             pr_number=int(pr_number),
             pr_title=str(pr_title),
             pr_body=pr_body,
