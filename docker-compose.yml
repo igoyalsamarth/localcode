@@ -2,7 +2,7 @@ services:
   rabbitmq:
     # Plain broker only (AMQP). The *-management* image enables management UI, Prometheus,
     # federation, etc.; Dramatiq only needs port 5672.
-    image: rabbitmq:3.13-alpine
+    image: rabbitmq:3.13
     container_name: greagent-rabbitmq
     ports:
       - "5672:5672"

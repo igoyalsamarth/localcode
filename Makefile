@@ -31,7 +31,7 @@ dev-infra:
 	@echo "Starting RabbitMQ..."
 	docker run -d --name greagent-rabbitmq \
 		-p 5672:5672 \
-		rabbitmq:3.13-alpine || true
+		rabbitmq:3.13 || true
 	@echo ""
 	@echo "Infrastructure started!"
 	@echo "RabbitMQ: amqp://guest:guest@localhost:5672/ (no web UI; use rabbitmqctl via docker exec if needed)"
