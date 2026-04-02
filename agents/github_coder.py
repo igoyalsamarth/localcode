@@ -21,7 +21,6 @@ from deepagents.backends import LocalShellBackend
 
 from agents.deep_agent_stream import stream_deep_agent
 from agents.github_llm import get_github_deep_agent_llm
-from agents.reviewer_tools import add_inline_review_comment
 from agents.usage_callback import AgentLlmUsageCallbackHandler
 from constants import (
     AGENT_LLM_PROVIDER,
@@ -278,12 +277,17 @@ _PR_CODER_SYSTEM_SUFFIX = """
 
 ## Pull request task (``greagent:code``)
 
-This run targets an **existing open pull request**. Do not create a separate PR for the same
-change unless the user explicitly asked. Clone the repository, inspect the diff against the
-base branch, and use the ``add_inline_review_comment`` tool for concrete line-level feedback
-(including suggested edits where helpful). Use ``gh pr comment`` / ``gh pr review`` for summary
-feedback. When **Prior discussion** is included in the user message, treat it as authoritative
-context for what reviewers and authors already asked for or agreed on.
+You are the **coder**, not a reviewer. This run updates an **existing open PR** by committing
+real code changes on that PR’s **head branch** and pushing them so the PR diff updates.
+
+- **Do not** treat this as a code review: do not spend the run only on ``gh pr review`` or
+  line-by-line commentary unless the user explicitly asked for review-only output.
+- **Do** implement fixes and features: edit files, run tests/lint if appropriate, **commit**
+  (🤖 in the message), and **push** to the same head branch that the PR already uses.
+- **Do not** open a second PR for this work; push to the existing branch so the current PR
+  advances.
+- When **Prior discussion** is present, use it as the main spec for what to change (review
+  comments, author replies, checklist items).
 """
 
 
@@ -364,17 +368,18 @@ Base branch: {pr.base_branch}
 Head branch: {pr.head_branch}
 Head SHA: {pr.head_sha}
 {prior_block}
-Please work on this pull request:
+Implement what this PR and the discussion above require—**by changing code on the PR branch**, not by re-reviewing:
 
 1. Clone the repo to repos/{pr.repo_name} if it doesn't exist (use: git clone {clone_url} repos/{pr.repo_name})
-2. Fetch and check out the PR head: git fetch origin {pr.head_branch} && git checkout {pr.head_branch}
-3. Review the diff vs the base branch: git diff {pr.base_branch}...{pr.head_branch}
+2. Fetch the latest and check out the **PR head branch** (the branch that already backs this PR), e.g.:
+   ``git fetch origin`` then ``git checkout {pr.head_branch}`` (create a local tracking branch if needed).
+3. Use ``git diff {pr.base_branch}...HEAD`` (or ``origin/{pr.base_branch}`` if needed) to see what the PR currently changes; then **edit the codebase** to satisfy the PR description, title, and any concrete asks in **Prior discussion** (e.g. fix bugs, apply refactors, address review feedback).
+4. Commit your work with a 🤖-prefixed message. Do **not** change git author to a personal email.
+5. Point ``origin`` at the token remote and push **your branch** so the existing PR updates:
+   ``git remote set-url origin {clone_url}`` then ``git push origin {pr.head_branch}``
+6. Optionally leave a brief ``gh pr comment {pr.pr_number}`` summarizing what you committed (no need to submit a formal PR review unless the user only wanted commentary).
 
-4. Add inline review comments using ``add_inline_review_comment`` where specific lines deserve
-   feedback or suggested edits (multi-line: set ``start_line`` and ``line``).
-
-5. Post a short summary with ``gh pr comment {pr.pr_number}`` and submit a review with
-   ``gh pr review {pr.pr_number}`` (approve, request changes, or comment) as appropriate.
+If there is truly nothing to implement, say so in one PR comment and stop—but default assumption is **ship commits** on ``{pr.head_branch}``.
 """
     run_id = github_pr_workflow_run_id(pr.full_name, pr.pr_number)
     usage_cb = AgentLlmUsageCallbackHandler()
@@ -384,11 +389,6 @@ Please work on this pull request:
         "configurable": {"thread_id": run_id},
         "callbacks": [usage_cb],
     }
-
-    os.environ["GITHUB_PR_OWNER"] = pr.owner
-    os.environ["GITHUB_PR_REPO"] = pr.repo_name
-    os.environ["GITHUB_PR_NUMBER"] = str(pr.pr_number)
-    os.environ["GITHUB_PR_HEAD_SHA"] = pr.head_sha
 
     _previous_gh_token = os.environ.get("GH_TOKEN")
     os.environ["GH_TOKEN"] = token_value
@@ -407,23 +407,11 @@ Please work on this pull request:
                 repo_name=pr.repo_name,
                 sandbox_home=sandbox_home,
             )
-            env_vars.update(
-                {
-                    "GITHUB_PR_OWNER": pr.owner,
-                    "GITHUB_PR_REPO": pr.repo_name,
-                    "GITHUB_PR_NUMBER": str(pr.pr_number),
-                    "GITHUB_PR_HEAD_SHA": pr.head_sha,
-                }
-            )
             backend, session = create_daytona_agent_session(
                 run_id, env_vars, sandbox_home=sandbox_home
             )
             daytona_session = session
-            agent = create_github_coder_agent(
-                backend,
-                system_prompt=system_prompt,
-                tools=[add_inline_review_comment],
-            )
+            agent = create_github_coder_agent(backend, system_prompt=system_prompt)
             stream_deep_agent(agent, prompt, stream_config)
         else:
             logger.info(
@@ -441,11 +429,7 @@ Please work on this pull request:
                     virtual_mode=True,
                     inherit_env=True,
                 )
-                agent = create_github_coder_agent(
-                    backend,
-                    system_prompt=system_prompt,
-                    tools=[add_inline_review_comment],
-                )
+                agent = create_github_coder_agent(backend, system_prompt=system_prompt)
                 stream_deep_agent(agent, prompt, stream_config)
     finally:
         if _previous_gh_token is None:
