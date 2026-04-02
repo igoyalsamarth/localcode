@@ -1,7 +1,7 @@
 """Tests for logger module."""
 
 import logging
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import structlog
@@ -68,7 +68,7 @@ class TestLogger:
         ):
             with patch.object(logger_module, "Client") as client_cls:
                 with patch.object(
-                    logger_module, "AxiomHandler", return_value=mock_handler
+                    logger_module, "AxiomLogHandler", return_value=mock_handler
                 ) as handler_cls:
                     configure_logging()
 
@@ -86,3 +86,28 @@ class TestLogger:
             ext_logger = logging.getLogger(logger_name)
             assert ext_logger.handlers == []
             assert ext_logger.propagate is True
+
+    def test_axiom_handler_renders_stdlib_format_strings(self):
+        """Stdlib loggers should be ingested with their formatted message."""
+        client = MagicMock()
+        handler = logger_module.AxiomLogHandler(client, "greagent-test", interval=60)
+        handler.timer.cancel()
+
+        record = logging.LogRecord(
+            name="uvicorn.access",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg='%s - "%s %s HTTP/%s" %d',
+            args=("127.0.0.1:1", "GET", "/health", "1.1", 200),
+            exc_info=None,
+        )
+
+        handler.emit(record)
+
+        assert len(handler.buffer) == 1
+        assert handler.buffer[0]["msg"] == '127.0.0.1:1 - "GET /health HTTP/1.1" 200'
+        assert handler.buffer[0]["message"] == '127.0.0.1:1 - "GET /health HTTP/1.1" 200'
+        assert handler.buffer[0]["args"] == ()
+
+        handler.timer.cancel()

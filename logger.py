@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 from typing import Optional
 
 import structlog
@@ -29,6 +30,30 @@ from constants import (
 
 _configured = False
 _axiom_enabled = False
+
+
+class AxiomLogHandler(AxiomHandler):
+    """Axiom handler that normalizes stdlib log records before ingest."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        payload = record.__dict__.copy()
+        rendered = record.getMessage()
+        payload["message"] = rendered
+        payload["msg"] = rendered
+        payload["args"] = ()
+        if record.exc_info:
+            payload["exc_text"] = logging.Formatter().formatException(record.exc_info)
+
+        self.buffer.append(payload)
+        if (
+            len(self.buffer) >= 1000
+            or time.monotonic() - self.last_flush > self.interval
+        ):
+            self.flush()
+
+        self.timer.cancel()
+        self.timer = self.timer.__class__(self.interval, self.flush)
+        self.timer.start()
 
 
 def _configure_external_loggers(level: int) -> None:
@@ -72,7 +97,7 @@ def _build_handlers(
             client_kwargs["org_id"] = org_id
 
         client = Client(**client_kwargs)
-        return [AxiomHandler(client, dataset, level=level)], structlog.stdlib.render_to_log_kwargs, True
+        return [AxiomLogHandler(client, dataset, level=level)], structlog.stdlib.render_to_log_kwargs, True
 
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(level)
