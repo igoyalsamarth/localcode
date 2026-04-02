@@ -164,6 +164,21 @@ def get_log_level() -> str:
     return os.environ.get("LOG_LEVEL", "INFO").upper()
 
 
+def get_axiom_token() -> str:
+    """Resolve the Axiom ingest token from the canonical SDK env name."""
+    return os.environ.get("AXIOM_TOKEN", "").strip()
+
+
+def get_axiom_dataset() -> str:
+    """Dataset name for application logs."""
+    return os.environ.get("AXIOM_DATASET", "greagents-be").strip()
+
+
+def get_axiom_org_id() -> str:
+    """Optional org id for personal Axiom tokens."""
+    return os.environ.get("AXIOM_ORG_ID", "").strip()
+
+
 # Database configuration
 def get_sql_echo() -> bool:
     """Whether to echo SQL queries (for debugging)."""

@@ -14,6 +14,9 @@ from constants import (
     daytona_sandbox_home,
     default_catalog_model_spec,
     get_agent_model_name,
+    get_axiom_dataset,
+    get_axiom_org_id,
+    get_axiom_token,
     get_database_url,
     git_identity_from_env,
     get_rabbitmq_url,
@@ -159,6 +162,30 @@ class TestConstants:
         with patch.dict(os.environ, {"LOG_LEVEL": "debug"}, clear=True):
             level = get_log_level()
             assert level == "DEBUG"
+
+    def test_get_axiom_token_uses_canonical_env_name(self):
+        """Axiom token is read only from AXIOM_TOKEN."""
+        with patch.dict(os.environ, {"AXIOM_TOKEN": "sdk-token"}, clear=True):
+            assert get_axiom_token() == "sdk-token"
+
+    def test_get_axiom_token_ignores_noncanonical_env_names(self):
+        """Legacy alias env vars are not supported."""
+        with patch.dict(
+            os.environ,
+            {"AXIOM_API_TOKEN": "app-token", "AIOM_API_KEY": "legacy-token"},
+            clear=True,
+        ):
+            assert get_axiom_token() == ""
+
+    def test_get_axiom_dataset_default(self):
+        """Axiom logs use the default dataset when unset."""
+        with patch.dict(os.environ, {}, clear=True):
+            assert get_axiom_dataset() == "greagents-be"
+
+    def test_get_axiom_org_id_default(self):
+        """Org id is optional for Axiom configuration."""
+        with patch.dict(os.environ, {}, clear=True):
+            assert get_axiom_org_id() == ""
 
     def test_get_sql_echo_default(self):
         """Test SQL echo disabled by default."""
