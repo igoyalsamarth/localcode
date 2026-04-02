@@ -2,9 +2,31 @@
 
 from __future__ import annotations
 
+from logger import get_logger
+
+
+logger = get_logger(__name__)
+
+
+def _render_content(content: object) -> str:
+    """Normalize message content into a compact loggable string."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if text:
+                    parts.append(str(text))
+        return "\n".join(part for part in parts if part)
+    return str(content)
+
 
 def stream_deep_agent(agent: object, user_prompt: str, config: dict) -> None:
-    """Stream agent messages to stdout (tool calls, tool results, AI text)."""
+    """Stream agent activity through the centralized logger."""
     for chunk in agent.stream(
         {
             "messages": [
@@ -33,16 +55,17 @@ def stream_deep_agent(agent: object, user_prompt: str, config: dict) -> None:
             if tool_call_chunks:
                 for tc in tool_call_chunks:
                     if tc.get("name"):
-                        print(f"[{source}] Tool call: {tc['name']}")
+                        logger.info("[%s] Tool call: %s", source, tc["name"])
                     if tc.get("args"):
-                        print(tc["args"], end="", flush=True)
+                        logger.debug("[%s] Tool args: %s", source, tc["args"])
 
             if msg.type == "tool":
-                print(
-                    f"[{source}] Tool result [{msg.name}]: {str(msg.content)[:150]}"
+                logger.info(
+                    "[%s] Tool result [%s]: %s",
+                    source,
+                    msg.name,
+                    _render_content(msg.content)[:300],
                 )
 
             if msg.type == "ai" and msg.content and not tool_call_chunks:
-                print(msg.content, end="", flush=True)
-
-        print()
+                logger.debug("[%s] Agent output: %s", source, _render_content(msg.content))
