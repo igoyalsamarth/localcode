@@ -106,8 +106,8 @@ class TestLogger:
         handler.emit(record)
 
         assert len(handler.buffer) == 1
-        assert handler.buffer[0]["message"] == '127.0.0.1:1 - "GET /health HTTP/1.1" 200'
-        assert "msg" not in handler.buffer[0]
+        assert handler.buffer[0]["msg"] == '127.0.0.1:1 - "GET /health HTTP/1.1" 200'
+        assert "message" not in handler.buffer[0]
         assert handler.buffer[0]["args"] == ()
 
         handler.timer.cancel()
