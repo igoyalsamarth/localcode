@@ -72,6 +72,8 @@ def main() -> None:
         host="0.0.0.0",
         port=8000,
         reload=False,
+        log_config=None,
+        access_log=True,
     )
 
 

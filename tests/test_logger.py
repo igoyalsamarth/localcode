@@ -77,3 +77,12 @@ class TestLogger:
         root_logger = logging.getLogger()
         assert root_logger.handlers == [mock_handler]
         assert logger_module._axiom_enabled is True
+
+    def test_configure_logging_routes_uvicorn_loggers_to_root(self):
+        """Uvicorn/FastAPI loggers should propagate into the shared handlers."""
+        configure_logging()
+
+        for logger_name in ("uvicorn", "uvicorn.error", "uvicorn.access", "fastapi"):
+            ext_logger = logging.getLogger(logger_name)
+            assert ext_logger.handlers == []
+            assert ext_logger.propagate is True

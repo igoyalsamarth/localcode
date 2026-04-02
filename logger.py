@@ -31,6 +31,20 @@ _configured = False
 _axiom_enabled = False
 
 
+def _configure_external_loggers(level: int) -> None:
+    """Route framework/runtime loggers through the root handlers."""
+    for logger_name in (
+        "uvicorn",
+        "uvicorn.error",
+        "uvicorn.access",
+        "fastapi",
+    ):
+        ext_logger = logging.getLogger(logger_name)
+        ext_logger.handlers = []
+        ext_logger.setLevel(level)
+        ext_logger.propagate = True
+
+
 def _build_shared_processors() -> list[structlog.typing.Processor]:
     """Processors shared by both Axiom and local console rendering."""
     return [
@@ -94,6 +108,7 @@ def configure_logging(level: Optional[str] = None) -> None:
         handlers=handlers,
         force=True,
     )
+    _configure_external_loggers(log_level)
 
     structlog.reset_defaults()
     structlog.configure(
