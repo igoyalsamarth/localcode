@@ -21,6 +21,8 @@ dependencies = [
   "daytona>=0.153.0",
   "dramatiq[rabbitmq]>=1.17.0",
   "dodopayments[webhooks]>=1.92.1",
+  "axiom-py>=0.10.0",
+  "structlog>=25.5.0",
 ]
 
 [project.optional-dependencies]

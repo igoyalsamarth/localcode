@@ -5,6 +5,10 @@ from urllib.parse import quote
 import requests
 
 from constants import GITHUB_REST_API_VERSION
+from logger import get_logger
+
+
+logger = get_logger(__name__)
 
 
 def add_issue_reaction(
@@ -43,7 +47,13 @@ def add_issue_reaction(
 
     payload = {"content": reaction}
 
-    print(f"Adding reaction '{reaction}' to issue #{issue_number} in {owner}/{repo}...")
+    logger.info(
+        "Adding reaction '%s' to issue #%s in %s/%s",
+        reaction,
+        issue_number,
+        owner,
+        repo,
+    )
     response = requests.post(url, headers=headers, json=payload)
     response.raise_for_status()
 
