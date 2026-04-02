@@ -38,7 +38,6 @@ class AxiomLogHandler(AxiomHandler):
     def emit(self, record: logging.LogRecord) -> None:
         payload = record.__dict__.copy()
         rendered = record.getMessage()
-        payload["message"] = rendered
         payload["msg"] = rendered
         payload["args"] = ()
         if record.exc_info:
@@ -97,7 +96,11 @@ def _build_handlers(
             client_kwargs["org_id"] = org_id
 
         client = Client(**client_kwargs)
-        return [AxiomLogHandler(client, dataset, level=level)], structlog.stdlib.render_to_log_kwargs, True
+        return (
+            [AxiomLogHandler(client, dataset, level=level)],
+            structlog.stdlib.render_to_log_kwargs,
+            True,
+        )
 
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(level)
