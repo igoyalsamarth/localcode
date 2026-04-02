@@ -1,5 +1,7 @@
 """GitHub REST API helpers for issues (reactions, comments, labels)."""
 
+from typing import Any
+
 from urllib.parse import quote
 
 import requests
@@ -9,6 +11,9 @@ from logger import get_logger
 
 
 logger = get_logger(__name__)
+
+_DEFAULT_REQUEST_TIMEOUT_SEC = 60
+_MAX_LIST_PAGES = 25
 
 
 def add_issue_reaction(
@@ -86,6 +91,59 @@ def _issue_headers(token: str) -> dict[str, str]:
         "Content-Type": "application/json",
         "X-GitHub-Api-Version": GITHUB_REST_API_VERSION,
     }
+
+
+def _get_json_paginated_list(
+    url: str,
+    token: str,
+    *,
+    max_pages: int = _MAX_LIST_PAGES,
+) -> list[dict[str, Any]]:
+    """GET a GitHub REST collection with ``page`` / ``per_page`` until exhausted or capped."""
+    headers = _issue_headers(token)
+    out: list[dict[str, Any]] = []
+    page = 1
+    per_page = 100
+    while page <= max_pages:
+        r = requests.get(
+            url,
+            headers=headers,
+            params={"per_page": per_page, "page": page},
+            timeout=_DEFAULT_REQUEST_TIMEOUT_SEC,
+        )
+        r.raise_for_status()
+        batch = r.json()
+        if not isinstance(batch, list) or not batch:
+            break
+        out.extend(batch)
+        if len(batch) < per_page:
+            break
+        page += 1
+    return out
+
+
+def list_pr_issue_comments(
+    owner: str, repo: str, pr_number: int, token: str
+) -> list[dict[str, Any]]:
+    """
+    List issue (conversation) comments on a pull request.
+
+    Uses ``GET /repos/{owner}/{repo}/issues/{pr_number}/comments``.
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
+    return _get_json_paginated_list(url, token)
+
+
+def list_pr_review_comments(
+    owner: str, repo: str, pr_number: int, token: str
+) -> list[dict[str, Any]]:
+    """
+    List inline review comments on a pull request.
+
+    Uses ``GET /repos/{owner}/{repo}/pulls/{pr_number}/comments``.
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/comments"
+    return _get_json_paginated_list(url, token)
 
 
 def ensure_repo_label_exists(

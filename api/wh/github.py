@@ -9,10 +9,14 @@ from sqlalchemy import select
 from db import session_scope
 from logger import get_logger
 from model.tables import GitHubInstallation, Organization, User
-from services.github.coder_trigger import resolve_coder_issue_work
+from services.github.coder_trigger import (
+    resolve_coder_issue_work,
+    resolve_coder_pr_work,
+)
 from services.github.coder_workflow import (
     ensure_greagent_labels_on_repository,
     prepare_issue_for_coder_work,
+    prepare_pr_for_coder_work,
 )
 from services.github.review_trigger import resolve_review_pr_work
 from services.github.review_workflow import (
@@ -38,7 +42,11 @@ from services.github.agent_wallet_gate import (
     notify_insufficient_wallet_for_pr,
 )
 from services.wallet import wallet_allows_agent_run
-from task_queue.tasks import process_github_issue, process_github_pr_review
+from task_queue.tasks import (
+    process_github_issue,
+    process_github_pr_coder,
+    process_github_pr_review,
+)
 
 logger = get_logger(__name__)
 
@@ -277,6 +285,11 @@ def _parse_review_trigger(data: dict[str, Any]) -> PROpenedForReview | None:
         return resolve_review_pr_work(session, data)
 
 
+def _parse_coder_pr_trigger(data: dict[str, Any]) -> PROpenedForReview | None:
+    with session_scope() as session:
+        return resolve_coder_pr_work(session, data)
+
+
 async def _handle_issues_event(
     data: dict[str, Any],
     x_github_delivery: str | None,
@@ -366,6 +379,79 @@ async def _handle_pull_request_event(
     data: dict[str, Any],
     x_github_delivery: str | None,
 ) -> dict[str, Any]:
+    coder_work = _parse_coder_pr_trigger(data)
+    if coder_work is not None:
+        logger.info(
+            "PR coder webhook delivery=%s action=%s pr=%s#%s",
+            x_github_delivery,
+            data.get("action"),
+            coder_work.full_name,
+            coder_work.pr_number,
+        )
+        with session_scope() as session:
+            if not wallet_allows_agent_run(session, coder_work.owner, coder_work.repo_name):
+                logger.info(
+                    "Skipping PR coder enqueue (wallet below $2) for %s#%s",
+                    coder_work.full_name,
+                    coder_work.pr_number,
+                )
+                try:
+                    notify_insufficient_wallet_for_pr(coder_work)
+                except Exception:
+                    logger.exception(
+                        "Failed to post insufficient-wallet comment on %s#%s",
+                        coder_work.full_name,
+                        coder_work.pr_number,
+                    )
+                return {
+                    "status": "insufficient_wallet",
+                    "detail": "Organization wallet is below $2.00 USD; top up in billing settings.",
+                    "repository": coder_work.full_name,
+                    "pr_number": coder_work.pr_number,
+                }
+        try:
+            prepare_pr_for_coder_work(coder_work)
+        except Exception:
+            logger.exception(
+                "prepare_pr_for_coder_work failed for %s#%s (delivery=%s)",
+                coder_work.full_name,
+                coder_work.pr_number,
+                x_github_delivery,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to prepare PR for coder (labels/reaction). Check token permissions.",
+            ) from None
+        logger.info(
+            "Enqueuing PR coder task for #%s %s in %s",
+            coder_work.pr_number,
+            coder_work.pr_title,
+            coder_work.full_name,
+        )
+        pr_data = {
+            "owner": coder_work.owner,
+            "repo_name": coder_work.repo_name,
+            "repo_url": coder_work.repo_url,
+            "full_name": coder_work.full_name,
+            "github_repo_id": coder_work.github_repo_id,
+            "pr_number": coder_work.pr_number,
+            "pr_title": coder_work.pr_title,
+            "pr_body": coder_work.pr_body,
+            "base_branch": coder_work.base_branch,
+            "head_branch": coder_work.head_branch,
+            "head_sha": coder_work.head_sha,
+            "github_installation_id": coder_work.github_installation_id,
+            "github_sender_login": coder_work.github_sender_login,
+        }
+        process_github_pr_coder.send(pr_data)
+        return {
+            "status": "enqueued",
+            "workflow": "pr_coder",
+            "pr_number": coder_work.pr_number,
+            "pr_title": coder_work.pr_title,
+            "repository": coder_work.full_name,
+        }
+
     work = _parse_review_trigger(data)
 
     if work is None:
@@ -462,7 +548,7 @@ async def github_webhook(
 
     - ``installation`` / ``installation_repositories``: persist installation and repos.
     - ``issues``: enqueue coder task on the shared ``github_agent`` Dramatiq queue.
-    - ``pull_request``: enqueue review task on the same ``github_agent`` queue.
+    - ``pull_request``: enqueue review task, or PR coder when label ``greagent:code`` is added.
     """
     payload = await request.body()
 

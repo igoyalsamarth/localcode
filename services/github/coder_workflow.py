@@ -19,6 +19,7 @@ from services.github.installation_token import (
     get_installation_token_for_repo,
 )
 from services.github.issue_payload import IssueOpenedForCoder
+from services.github.pr_payload import PROpenedForReview
 
 logger = get_logger(__name__)
 
@@ -29,7 +30,7 @@ def ensure_greagent_labels_on_repository(
     *,
     access_token: str | None = None,
 ) -> None:
-    """Create the four ``greagent:*`` labels on the repo if they are missing."""
+    """Create coder queue / progress labels on the repo if they are missing."""
     tok = access_token if access_token is not None else get_api_token_for_repo(
         owner, repo_name
     )
@@ -91,6 +92,59 @@ def _transition_in_progress_to_error(
     )
 
 
+def _ensure_greagent_labels_exist_for_pr(
+    work: PROpenedForReview, access_token: str
+) -> None:
+    for name in (CODE, IN_PROGRESS, DONE, ERROR):
+        ensure_repo_label_exists(work.owner, work.repo_name, access_token, name)
+
+
+def _transition_pr_coder_queue_to_in_progress(
+    work: PROpenedForReview, access_token: str
+) -> None:
+    """Replace ``greagent:code`` with ``greagent:in-progress`` on the PR."""
+    remove_issue_label(
+        work.owner, work.repo_name, work.pr_number, CODE, access_token
+    )
+    add_issue_labels(
+        work.owner,
+        work.repo_name,
+        work.pr_number,
+        access_token,
+        [IN_PROGRESS],
+    )
+
+
+def _transition_pr_coder_in_progress_to_done(
+    work: PROpenedForReview, access_token: str
+) -> None:
+    remove_issue_label(
+        work.owner, work.repo_name, work.pr_number, IN_PROGRESS, access_token
+    )
+    add_issue_labels(
+        work.owner,
+        work.repo_name,
+        work.pr_number,
+        access_token,
+        [DONE],
+    )
+
+
+def _transition_pr_coder_in_progress_to_error(
+    work: PROpenedForReview, access_token: str
+) -> None:
+    remove_issue_label(
+        work.owner, work.repo_name, work.pr_number, IN_PROGRESS, access_token
+    )
+    add_issue_labels(
+        work.owner,
+        work.repo_name,
+        work.pr_number,
+        access_token,
+        [ERROR],
+    )
+
+
 def prepare_issue_for_coder_work(work: IssueOpenedForCoder) -> None:
     """
     Move to ``greagent:in-progress``, then add the eyes reaction.
@@ -108,6 +162,28 @@ def prepare_issue_for_coder_work(work: IssueOpenedForCoder) -> None:
         owner=work.owner,
         repo=work.repo_name,
         issue_number=work.issue_number,
+        token=tok,
+        reaction="eyes",
+    )
+
+
+def prepare_pr_for_coder_work(work: PROpenedForReview) -> None:
+    """
+    Move PR from ``greagent:code`` to ``greagent:in-progress``, then add the eyes reaction.
+
+    Call this synchronously in the webhook before enqueueing the PR coder task.
+    """
+    tok = get_installation_token_for_repo(
+        work.owner,
+        work.repo_name,
+        github_installation_id=work.github_installation_id,
+    )
+    _ensure_greagent_labels_exist_for_pr(work, tok)
+    _transition_pr_coder_queue_to_in_progress(work, tok)
+    add_issue_reaction(
+        owner=work.owner,
+        repo=work.repo_name,
+        issue_number=work.pr_number,
         token=tok,
         reaction="eyes",
     )

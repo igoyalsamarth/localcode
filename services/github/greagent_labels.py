@@ -1,6 +1,6 @@
 """Greagent GitHub labels for issue and PR workflows (queue, progress, outcome)."""
 
-# Issue workflow
+# Issue + PR coder queue (issues: ``issues`` webhook; PRs: ``pull_request`` ``labeled`` only).
 CODE = "greagent:code"
 IN_PROGRESS = "greagent:in-progress"
 DONE = "greagent:done"

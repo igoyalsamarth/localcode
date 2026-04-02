@@ -95,6 +95,86 @@ def process_github_issue(issue_data: dict) -> None:
 
 
 @dramatiq.actor(queue_name=_GITHUB_AGENT_QUEUE, **_GITHUB_AGENT_ACTOR_OPTIONS)
+def process_github_pr_coder(pr_data: dict) -> None:
+    """
+    Process a GitHub PR with the coder agent (``pull_request`` ``labeled`` with ``greagent:code``).
+
+    Args:
+        pr_data: Dictionary containing PR information (same shape as review tasks).
+    """
+    from agents.github_coder import run_coder_on_pr
+    from services.github.client import comment_on_issue
+    from services.github.coder_workflow import (
+        _transition_pr_coder_in_progress_to_done,
+        _transition_pr_coder_in_progress_to_error,
+    )
+    from services.github.installation_token import get_installation_token_for_repo
+    from services.github.pr_payload import PROpenedForReview
+
+    work = PROpenedForReview(**pr_data)
+    logger.info(
+        "Worker processing PR coder: %s/%s#%s",
+        work.owner,
+        work.repo_name,
+        work.pr_number,
+    )
+
+    with hold_github_repo_agent_lock(work.github_repo_id):
+        try:
+            tok = get_installation_token_for_repo(
+                work.owner,
+                work.repo_name,
+                github_installation_id=work.github_installation_id,
+            )
+
+            run_coder_on_pr(work, access_token=tok)
+
+            logger.info(
+                "Successfully processed PR coder #%s in %s",
+                work.pr_number,
+                work.full_name,
+            )
+
+            try:
+                _transition_pr_coder_in_progress_to_done(work, tok)
+            except Exception as label_err:
+                logger.exception(
+                    "Failed to set greagent:done on PR after coder run: %s", label_err
+                )
+
+        except Exception as e:
+            logger.exception(
+                "Worker failed to process PR coder #%s in %s/%s: %s",
+                work.pr_number,
+                work.owner,
+                work.repo_name,
+                e,
+            )
+
+            try:
+                tok = get_installation_token_for_repo(
+                    work.owner,
+                    work.repo_name,
+                    github_installation_id=work.github_installation_id,
+                )
+                _transition_pr_coder_in_progress_to_error(work, tok)
+                comment_on_issue(
+                    owner=work.owner,
+                    repo=work.repo_name,
+                    issue_number=work.pr_number,
+                    token=tok,
+                    body=(
+                        "⚠️ Sorry, I encountered an error while working on this PR:\n\n"
+                        f"```\n{e}\n```"
+                    ),
+                )
+            except Exception as cleanup_err:
+                logger.exception("Failed to handle PR coder error cleanup: %s", cleanup_err)
+
+            raise
+
+
+@dramatiq.actor(queue_name=_GITHUB_AGENT_QUEUE, **_GITHUB_AGENT_ACTOR_OPTIONS)
 def process_github_pr_review(pr_data: dict) -> None:
     """
     Process a GitHub PR with the review agent.

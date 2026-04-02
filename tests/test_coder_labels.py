@@ -56,7 +56,7 @@ class TestGreagentLabels:
         assert isinstance(REVIEWING, str)
 
     def test_labels_have_greagent_prefix(self):
-        """Test all labels have greagent prefix."""
+        """Test labels use the greagent: namespace."""
         assert CODE.startswith("greagent:")
         assert IN_PROGRESS.startswith("greagent:")
         assert DONE.startswith("greagent:")

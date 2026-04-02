@@ -1,7 +1,7 @@
 """
 Deep-agent GitHub coder: clones repos, implements issues, opens PRs.
 
-Invoked via `run_agent_on_issue` (e.g. from `services.github.coder_workflow`).
+Invoked via `run_agent_on_issue` (issues) or `run_coder_on_pr` (PRs labeled ``greagent:code``).
 Uses a stable workflow ``run_id`` (repo + issue number) for usage rows, stream config,
 and Daytona labels; the usage table's primary key is unique per execution.
 
@@ -13,6 +13,7 @@ otherwise the local ``LocalShellBackend`` virtual filesystem under ``./workspace
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from deepagents import create_deep_agent
@@ -20,6 +21,7 @@ from deepagents.backends import LocalShellBackend
 
 from agents.deep_agent_stream import stream_deep_agent
 from agents.github_llm import get_github_deep_agent_llm
+from agents.reviewer_tools import add_inline_review_comment
 from agents.usage_callback import AgentLlmUsageCallbackHandler
 from constants import (
     AGENT_LLM_PROVIDER,
@@ -28,13 +30,22 @@ from constants import (
     git_identity_from_env,
 )
 from logger import get_logger
+from model.enums import GitHubWorkflowKind
 from services.github.agent_daytona import (
     build_sandbox_env_vars,
     create_daytona_agent_session,
     stop_sandbox,
 )
-from services.github.workflow_run_id import github_issue_workflow_run_id
-from services.github.workflow_usage import record_issue_workflow_usage
+from services.github.pr_conversation_context import fetch_pr_conversation_context_for_llm
+from services.github.pr_payload import PROpenedForReview
+from services.github.workflow_run_id import (
+    github_issue_workflow_run_id,
+    github_pr_workflow_run_id,
+)
+from services.github.workflow_usage import (
+    record_github_workflow_usage,
+    record_issue_workflow_usage,
+)
 from services.github.installation_token import (
     get_installation_token_for_repo,
     github_bot_git_identity,
@@ -120,7 +131,12 @@ def build_coder_system_prompt(
 """
     )
 
-def create_github_coder_agent(backend: object, *, system_prompt: str) -> object:
+def create_github_coder_agent(
+    backend: object,
+    *,
+    system_prompt: str,
+    tools: list | None = None,
+) -> object:
     """
     Build the deep agent graph for the given backend (local virtual FS or Daytona sandbox).
 
@@ -131,6 +147,7 @@ def create_github_coder_agent(backend: object, *, system_prompt: str) -> object:
         model=get_github_deep_agent_llm(),
         system_prompt=system_prompt,
         backend=backend,
+        tools=tools or [],
     )
 
 
@@ -254,4 +271,197 @@ Please implement the requested changes:
             run_id,
             usage_cb,
             provider=AGENT_LLM_PROVIDER,
+        )
+
+
+_PR_CODER_SYSTEM_SUFFIX = """
+
+## Pull request task (``greagent:code``)
+
+This run targets an **existing open pull request**. Do not create a separate PR for the same
+change unless the user explicitly asked. Clone the repository, inspect the diff against the
+base branch, and use the ``add_inline_review_comment`` tool for concrete line-level feedback
+(including suggested edits where helpful). Use ``gh pr comment`` / ``gh pr review`` for summary
+feedback. When **Prior discussion** is included in the user message, treat it as authoritative
+context for what reviewers and authors already asked for or agreed on.
+"""
+
+
+def run_coder_on_pr(
+    pr: PROpenedForReview,
+    *,
+    access_token: str | None = None,
+) -> None:
+    """
+    Run the code agent on a PR after the ``greagent:code`` label (webhook prepare step
+    already moved the PR to ``greagent:in-progress``).
+
+    Uses ``github:{owner}/{repo}#pr-{n}`` as ``run_id`` and records usage as
+    :class:`~model.enums.GitHubWorkflowKind` ``code``.
+    """
+    token_value = access_token or get_installation_token_for_repo(
+        pr.owner,
+        pr.repo_name,
+        github_installation_id=pr.github_installation_id,
+    )
+
+    env_identity = git_identity_from_env()
+    if env_identity:
+        (an, ae), (cn, ce) = env_identity
+        git_author_pair = (an, ae)
+        git_committer_pair = (
+            (cn, ce) if (cn != an or ce != ae) else None
+        )
+    else:
+        api_id = github_bot_git_identity()
+        git_author_pair = api_id
+        git_committer_pair = None
+        if not api_id:
+            logger.warning(
+                "Could not set GIT_AUTHOR_* for bot commits; set GIT_AUTHOR_NAME and "
+                "GIT_AUTHOR_EMAIL in .env, or set GITHUB_APP_SLUG / fix JWT GET /app. "
+                "Otherwise git may use local user.name/email."
+            )
+
+    full_name = pr.full_name
+    clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
+    use_daytona = daytona_sandbox_enabled()
+    sandbox_home = daytona_sandbox_home()
+    workflow_repo_abs = f"{sandbox_home}/repos/{pr.repo_name}"
+    system_prompt = (
+        build_coder_system_prompt(
+            daytona=use_daytona,
+            repo_name=pr.repo_name,
+            workflow_repo_abs=workflow_repo_abs if use_daytona else None,
+            sandbox_home=sandbox_home,
+        )
+        + _PR_CODER_SYSTEM_SUFFIX
+    )
+
+    prior_discussion = fetch_pr_conversation_context_for_llm(
+        pr.owner,
+        pr.repo_name,
+        pr.pr_number,
+        token_value,
+        max_chars=24_000,
+    )
+    prior_block = ""
+    if prior_discussion.strip():
+        prior_block = f"""
+## Prior discussion on this pull request (from GitHub)
+
+{prior_discussion}
+
+"""
+
+    prompt = f"""In the repository {pr.repo_url} (repo folder: repos/{pr.repo_name}):
+
+**Pull Request #{pr.pr_number}: {pr.pr_title}**
+
+{pr.pr_body or "(No description provided)"}
+
+Base branch: {pr.base_branch}
+Head branch: {pr.head_branch}
+Head SHA: {pr.head_sha}
+{prior_block}
+Please work on this pull request:
+
+1. Clone the repo to repos/{pr.repo_name} if it doesn't exist (use: git clone {clone_url} repos/{pr.repo_name})
+2. Fetch and check out the PR head: git fetch origin {pr.head_branch} && git checkout {pr.head_branch}
+3. Review the diff vs the base branch: git diff {pr.base_branch}...{pr.head_branch}
+
+4. Add inline review comments using ``add_inline_review_comment`` where specific lines deserve
+   feedback or suggested edits (multi-line: set ``start_line`` and ``line``).
+
+5. Post a short summary with ``gh pr comment {pr.pr_number}`` and submit a review with
+   ``gh pr review {pr.pr_number}`` (approve, request changes, or comment) as appropriate.
+"""
+    run_id = github_pr_workflow_run_id(pr.full_name, pr.pr_number)
+    usage_cb = AgentLlmUsageCallbackHandler()
+    llm = get_github_deep_agent_llm()
+    llm.callbacks = [usage_cb]
+    stream_config: dict = {
+        "configurable": {"thread_id": run_id},
+        "callbacks": [usage_cb],
+    }
+
+    os.environ["GITHUB_PR_OWNER"] = pr.owner
+    os.environ["GITHUB_PR_REPO"] = pr.repo_name
+    os.environ["GITHUB_PR_NUMBER"] = str(pr.pr_number)
+    os.environ["GITHUB_PR_HEAD_SHA"] = pr.head_sha
+
+    _previous_gh_token = os.environ.get("GH_TOKEN")
+    os.environ["GH_TOKEN"] = token_value
+
+    daytona_session = None
+    try:
+        if use_daytona:
+            logger.info(
+                "GitHub PR coder using Daytona sandbox (run_id=%s)",
+                run_id,
+            )
+            env_vars = build_sandbox_env_vars(
+                token_value,
+                git_author=git_author_pair,
+                git_committer=git_committer_pair,
+                repo_name=pr.repo_name,
+                sandbox_home=sandbox_home,
+            )
+            env_vars.update(
+                {
+                    "GITHUB_PR_OWNER": pr.owner,
+                    "GITHUB_PR_REPO": pr.repo_name,
+                    "GITHUB_PR_NUMBER": str(pr.pr_number),
+                    "GITHUB_PR_HEAD_SHA": pr.head_sha,
+                }
+            )
+            backend, session = create_daytona_agent_session(
+                run_id, env_vars, sandbox_home=sandbox_home
+            )
+            daytona_session = session
+            agent = create_github_coder_agent(
+                backend,
+                system_prompt=system_prompt,
+                tools=[add_inline_review_comment],
+            )
+            stream_deep_agent(agent, prompt, stream_config)
+        else:
+            logger.info(
+                "GitHub PR coder using local LocalShellBackend under ./workspace "
+                "(set DAYTONA_API_KEY to use Daytona)",
+            )
+            Path("workspace/repos").mkdir(parents=True, exist_ok=True)
+            with installation_token_env(
+                token_value,
+                git_author=git_author_pair,
+                git_committer=git_committer_pair,
+            ):
+                backend = LocalShellBackend(
+                    root_dir="./workspace",
+                    virtual_mode=True,
+                    inherit_env=True,
+                )
+                agent = create_github_coder_agent(
+                    backend,
+                    system_prompt=system_prompt,
+                    tools=[add_inline_review_comment],
+                )
+                stream_deep_agent(agent, prompt, stream_config)
+    finally:
+        if _previous_gh_token is None:
+            os.environ.pop("GH_TOKEN", None)
+        else:
+            os.environ["GH_TOKEN"] = _previous_gh_token
+        llm.callbacks = None
+        stop_sandbox(daytona_session)
+        record_github_workflow_usage(
+            workflow=GitHubWorkflowKind.code,
+            owner=pr.owner,
+            repo_name=pr.repo_name,
+            github_full_name=pr.full_name,
+            github_item_number=pr.pr_number,
+            run_id=run_id,
+            usage_cb=usage_cb,
+            provider=AGENT_LLM_PROVIDER,
+            github_sender_login=pr.github_sender_login,
         )
