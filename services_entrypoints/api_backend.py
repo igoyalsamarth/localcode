@@ -47,7 +47,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["greagent.com", "www.greagent.com"],
+    allow_origins=["https://greagent.com", "https://www.greagent.com"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
