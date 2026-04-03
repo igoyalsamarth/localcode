@@ -142,15 +142,27 @@ def daytona_sandbox_home() -> str:
     return h if h else f"/home/{daytona_sandbox_user()}"
 
 
+# Default Daytona snapshot when ``DAYTONA_SNAPSHOT`` is unset (override via env).
+DEFAULT_DAYTONA_SNAPSHOT = "greagents-be-custom-snapshot"
+
+
 def daytona_sandbox_snapshot() -> str | None:
     """
     Registered Daytona **snapshot name** for custom sandboxes (e.g. minimal git+gh from GHCR).
 
-    When unset, sandboxes use Daytona's stock language snapshots (see
-    :func:`daytona_sandbox_language_or_default`).
+    Defaults to :data:`DEFAULT_DAYTONA_SNAPSHOT`. Override with ``DAYTONA_SNAPSHOT``.
+    Set ``DAYTONA_SNAPSHOT`` to ``none`` or ``-`` to use Daytona's stock language
+    snapshots instead (see :func:`daytona_sandbox_language_or_default`).
     """
-    s = os.environ.get("DAYTONA_SNAPSHOT", "").strip()
-    return s if s else None
+    raw = os.environ.get("DAYTONA_SNAPSHOT")
+    if raw is None:
+        return DEFAULT_DAYTONA_SNAPSHOT
+    s = raw.strip()
+    if not s:
+        return DEFAULT_DAYTONA_SNAPSHOT  # treat empty like unset
+    if s.lower() in ("-", "none"):
+        return None
+    return s
 
 
 def daytona_sandbox_language_explicit() -> str | None:
@@ -168,7 +180,7 @@ def daytona_sandbox_os_user(*, custom_snapshot: bool) -> str | None:
     """
     Value for Daytona ``CreateSandboxFromSnapshotParams.os_user``.
 
-    When using a **custom** snapshot (``DAYTONA_SNAPSHOT`` set), defaults to
+    When using a **custom** snapshot (default or non-empty ``DAYTONA_SNAPSHOT``), defaults to
     :func:`daytona_sandbox_user` so the process runs as the bot-aligned account.
 
     For Daytona's **stock** snapshots, returns ``None`` unless ``DAYTONA_OS_USER`` is set

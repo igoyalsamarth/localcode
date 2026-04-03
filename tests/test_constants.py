@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from constants import (
     AGENT_LLM_PROVIDER,
+    DEFAULT_DAYTONA_SNAPSHOT,
     OLLAMA_API_KEY,
     OLLAMA_BASE_URL,
     daytona_sandbox_enabled,
@@ -121,9 +122,15 @@ class TestConstants:
 
     def test_daytona_sandbox_snapshot(self):
         with patch.dict(os.environ, {}, clear=True):
-            assert daytona_sandbox_snapshot() is None
+            assert daytona_sandbox_snapshot() == DEFAULT_DAYTONA_SNAPSHOT
         with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": "  my-snap  "}):
             assert daytona_sandbox_snapshot() == "my-snap"
+        with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": "none"}):
+            assert daytona_sandbox_snapshot() is None
+        with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": "-"}):
+            assert daytona_sandbox_snapshot() is None
+        with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": ""}):
+            assert daytona_sandbox_snapshot() == DEFAULT_DAYTONA_SNAPSHOT
 
     def test_daytona_sandbox_language_explicit(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -149,6 +156,8 @@ class TestConstants:
 
     def test_daytona_sandbox_language_or_default(self):
         with patch.dict(os.environ, {}, clear=True):
+            assert daytona_sandbox_language_or_default() is None
+        with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": "none"}):
             assert daytona_sandbox_language_or_default() == "typescript"
         with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": "custom"}):
             assert daytona_sandbox_language_or_default() is None
