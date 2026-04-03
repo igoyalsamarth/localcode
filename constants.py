@@ -124,13 +124,79 @@ def daytona_sandbox_enabled() -> bool:
     return bool(os.environ.get("DAYTONA_API_KEY", "").strip())
 
 
+def daytona_sandbox_user() -> str:
+    """
+    Linux user in the custom GHCR sandbox image (default ``greagents``), aligned with the
+    GitHub App bot identity for this product. Must match the image ``SANDBOX_USER`` build-arg.
+    """
+    u = os.environ.get("DAYTONA_SANDBOX_USER", "").strip()
+    return u if u else "greagents"
+
+
 def daytona_sandbox_home() -> str:
     """
-    Default OS home inside the TypeScript Daytona snapshot (used for ``WORKFLOW_REPO_ABS`` / ``PATH``).
-    Override via ``DAYTONA_AGENT_HOME`` if your image differs.
+    Sandbox home for ``WORKFLOW_REPO_ABS`` / ``PATH``. Override ``DAYTONA_AGENT_HOME`` if
+    the image layout differs; otherwise defaults to ``/home/<DAYTONA_SANDBOX_USER>``.
     """
     h = os.environ.get("DAYTONA_AGENT_HOME", "").strip()
-    return h if h else "/home/daytona"
+    return h if h else f"/home/{daytona_sandbox_user()}"
+
+
+def daytona_sandbox_snapshot() -> str | None:
+    """
+    Registered Daytona **snapshot name** for custom sandboxes (e.g. minimal git+gh from GHCR).
+
+    When unset, sandboxes use Daytona's stock language snapshots (see
+    :func:`daytona_sandbox_language_or_default`).
+    """
+    s = os.environ.get("DAYTONA_SNAPSHOT", "").strip()
+    return s if s else None
+
+
+def daytona_sandbox_language_explicit() -> str | None:
+    """
+    Optional ``language`` hint for ``CreateSandboxFromSnapshotParams``: ``python``,
+    ``typescript``, or ``javascript``. Empty env means "let the backend infer".
+    """
+    s = os.environ.get("DAYTONA_SANDBOX_LANGUAGE", "").strip().lower()
+    if s in ("python", "typescript", "javascript"):
+        return s
+    return None
+
+
+def daytona_sandbox_os_user(*, custom_snapshot: bool) -> str | None:
+    """
+    Value for Daytona ``CreateSandboxFromSnapshotParams.os_user``.
+
+    When using a **custom** snapshot (``DAYTONA_SNAPSHOT`` set), defaults to
+    :func:`daytona_sandbox_user` so the process runs as the bot-aligned account.
+
+    For Daytona's **stock** snapshots, returns ``None`` unless ``DAYTONA_OS_USER`` is set
+    (use ``-`` or ``none`` to force ``None`` even with a custom snapshot).
+    """
+    raw = os.environ.get("DAYTONA_OS_USER")
+    if raw is not None:
+        stripped = raw.strip()
+        if stripped.lower() in ("-", "none"):
+            return None
+        if stripped:
+            return stripped
+    if custom_snapshot:
+        return daytona_sandbox_user()
+    return None
+
+
+def daytona_sandbox_language_or_default() -> str | None:
+    """
+    Language for Daytona create params: explicit env, else stock ``typescript`` when no
+    custom snapshot, else ``None`` (custom image handles its own toolchains).
+    """
+    explicit = daytona_sandbox_language_explicit()
+    if explicit is not None:
+        return explicit
+    if daytona_sandbox_snapshot() is not None:
+        return None
+    return "typescript"
 
 
 def git_identity_from_env() -> tuple[tuple[str, str], tuple[str, str]] | None:
@@ -154,9 +220,8 @@ def get_rabbitmq_url() -> str:
 
 
 # Daytona configuration
-DAYTONA_INSTALL_GH_CLI = os.environ.get("DAYTONA_INSTALL_GH_CLI", "true")
+DAYTONA_INSTALL_GH_CLI = os.environ.get("DAYTONA_INSTALL_GH_CLI", "false")
 GITHUB_CLI_VERSION = os.environ.get("GITHUB_CLI_VERSION", "2.88.1")
-
 
 # Logging configuration
 def get_log_level() -> str:

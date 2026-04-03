@@ -1,0 +1,18 @@
+# Build and push a minimal git+gh image to GHCR for Daytona snapshots.
+#
+#   export SANDBOX_IMAGE_NAME=ghcr.io/<org>/greagent-agent-sandbox:latest
+#   echo "$GHCR_TOKEN" | docker login ghcr.io -u <user> --password-stdin
+#   docker compose -f docker/agent-sandbox/docker-compose.yml build
+#   docker compose -f docker/agent-sandbox/docker-compose.yml push
+#
+# Register the image in Daytona as a snapshot; set DAYTONA_SNAPSHOT in gragent-be.
+# Optional: SANDBOX_USER build-arg must match DAYTONA_SANDBOX_USER (default greagents).
+
+services:
+  greagent-agent-sandbox:
+    image: ${SANDBOX_IMAGE_NAME:?Set SANDBOX_IMAGE_NAME to ghcr.io/org/repo:tag}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SANDBOX_USER: ${SANDBOX_USER:-greagents}

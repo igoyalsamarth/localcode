@@ -46,7 +46,7 @@ from services.github.pr_payload import PROpenedForReview
 
 logger = get_logger(__name__)
 
-_BASE_INSTRUCTIONS = """You are a NodeJS expert who knows how to review TypeScript code and all the CLI commands around it.
+_BASE_INSTRUCTIONS = """You are an expert reviewer for polyglot codebases.
 
 Your job is to review pull requests and provide constructive feedback.
 

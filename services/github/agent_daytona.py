@@ -22,6 +22,9 @@ from constants import (
     DAYTONA_INSTALL_GH_CLI,
     GITHUB_CLI_VERSION,
     daytona_sandbox_home,
+    daytona_sandbox_language_or_default,
+    daytona_sandbox_os_user,
+    daytona_sandbox_snapshot,
 )
 from logger import get_logger
 
@@ -83,8 +86,8 @@ def ensure_github_cli_installed(
     """
     Install the ``gh`` binary into ``<sandbox_home>/bin`` when missing.
 
-    The TypeScript snapshot often does not include GitHub CLI; installing it avoids long
-    ``curl`` PR flows. Set ``DAYTONA_INSTALL_GH_CLI=false`` to skip.
+    Default is **off** (custom GHCR images ship ``gh``). Set ``DAYTONA_INSTALL_GH_CLI=true``
+    for Daytona's stock snapshots that omit the GitHub CLI.
     """
     if DAYTONA_INSTALL_GH_CLI.strip().lower() in (
         "0",
@@ -150,12 +153,21 @@ def create_daytona_agent_session(
     ``ephemeral=True`` maps to immediate removal once the sandbox is stopped (see Daytona
     ``CreateSandboxBaseParams``). Always call :func:`stop_sandbox` after the agent run.
 
-    Uses the TypeScript default snapshot so Node/npm/git tooling matches agent prompts.
+    Snapshot selection: set ``DAYTONA_SNAPSHOT`` to a Daytona-registered snapshot name
+    (e.g. minimal git+gh GHCR image). Otherwise uses Daytona's stock snapshot for
+    ``DAYTONA_SANDBOX_LANGUAGE`` or ``typescript``. Custom snapshots default
+    ``os_user`` to :func:`~constants.daytona_sandbox_user` unless ``DAYTONA_OS_USER``
+    overrides (``-`` / ``none`` to leave unset).
     """
     client = Daytona()
     home = sandbox_home or daytona_sandbox_home()
+    snap = daytona_sandbox_snapshot()
+    lang = daytona_sandbox_language_or_default()
+    os_user = daytona_sandbox_os_user(custom_snapshot=snap is not None)
     params = CreateSandboxFromSnapshotParams(
-        language="typescript",
+        snapshot=snap,
+        language=lang,
+        os_user=os_user,
         env_vars=env_vars,
         labels={"run_id": run_id, "app": "greagent-github-deep-agent"},
         ephemeral=True,

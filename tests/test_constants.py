@@ -12,6 +12,11 @@ from constants import (
     OLLAMA_BASE_URL,
     daytona_sandbox_enabled,
     daytona_sandbox_home,
+    daytona_sandbox_language_explicit,
+    daytona_sandbox_language_or_default,
+    daytona_sandbox_os_user,
+    daytona_sandbox_snapshot,
+    daytona_sandbox_user,
     default_catalog_model_spec,
     get_agent_model_name,
     get_axiom_dataset,
@@ -85,11 +90,17 @@ class TestConstants:
         ):
             assert daytona_sandbox_enabled() is False
 
+    def test_daytona_sandbox_user_default(self):
+        with patch.dict(os.environ, {}, clear=True):
+            assert daytona_sandbox_user() == "greagents"
+        with patch.dict(os.environ, {"DAYTONA_SANDBOX_USER": "  mybot  "}):
+            assert daytona_sandbox_user() == "mybot"
+
     def test_daytona_sandbox_home_default(self):
         """Test default Daytona home."""
         with patch.dict(os.environ, {}, clear=True):
             home = daytona_sandbox_home()
-            assert home == "/home/daytona"
+            assert home == "/home/greagents"
 
     def test_daytona_sandbox_home_custom(self):
         """Test custom Daytona home via ``DAYTONA_AGENT_HOME``."""
@@ -107,6 +118,47 @@ class TestConstants:
             clear=True,
         ):
             assert daytona_sandbox_home() == "/agent"
+
+    def test_daytona_sandbox_snapshot(self):
+        with patch.dict(os.environ, {}, clear=True):
+            assert daytona_sandbox_snapshot() is None
+        with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": "  my-snap  "}):
+            assert daytona_sandbox_snapshot() == "my-snap"
+
+    def test_daytona_sandbox_language_explicit(self):
+        with patch.dict(os.environ, {}, clear=True):
+            assert daytona_sandbox_language_explicit() is None
+        with patch.dict(os.environ, {"DAYTONA_SANDBOX_LANGUAGE": "PYTHON"}):
+            assert daytona_sandbox_language_explicit() == "python"
+        with patch.dict(os.environ, {"DAYTONA_SANDBOX_LANGUAGE": "rust"}):
+            assert daytona_sandbox_language_explicit() is None
+
+    def test_daytona_sandbox_os_user(self):
+        with patch.dict(os.environ, {}, clear=True):
+            assert daytona_sandbox_os_user(custom_snapshot=False) is None
+            assert daytona_sandbox_os_user(custom_snapshot=True) == "greagents"
+        with patch.dict(os.environ, {"DAYTONA_SANDBOX_USER": "mybot"}):
+            assert daytona_sandbox_os_user(custom_snapshot=True) == "mybot"
+        with patch.dict(os.environ, {"DAYTONA_OS_USER": " builder "}):
+            assert daytona_sandbox_os_user(custom_snapshot=False) == "builder"
+            assert daytona_sandbox_os_user(custom_snapshot=True) == "builder"
+        with patch.dict(os.environ, {"DAYTONA_OS_USER": "none"}):
+            assert daytona_sandbox_os_user(custom_snapshot=True) is None
+        with patch.dict(os.environ, {"DAYTONA_OS_USER": "-"}):
+            assert daytona_sandbox_os_user(custom_snapshot=True) is None
+
+    def test_daytona_sandbox_language_or_default(self):
+        with patch.dict(os.environ, {}, clear=True):
+            assert daytona_sandbox_language_or_default() == "typescript"
+        with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": "custom"}):
+            assert daytona_sandbox_language_or_default() is None
+        with patch.dict(
+            os.environ,
+            {"DAYTONA_SNAPSHOT": "custom", "DAYTONA_SANDBOX_LANGUAGE": "python"},
+        ):
+            assert daytona_sandbox_language_or_default() == "python"
+        with patch.dict(os.environ, {"DAYTONA_SANDBOX_LANGUAGE": "javascript"}):
+            assert daytona_sandbox_language_or_default() == "javascript"
 
     def test_git_identity_from_env_not_set(self):
         """Test git identity returns None when not set."""

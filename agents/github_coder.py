@@ -35,7 +35,9 @@ from services.github.agent_daytona import (
     create_daytona_agent_session,
     stop_sandbox,
 )
-from services.github.pr_conversation_context import fetch_pr_conversation_context_for_llm
+from services.github.pr_conversation_context import (
+    fetch_pr_conversation_context_for_llm,
+)
 from services.github.pr_payload import PROpenedForReview
 from services.github.workflow_run_id import (
     github_issue_workflow_run_id,
@@ -54,7 +56,7 @@ from services.github.issue_payload import IssueOpenedForCoder
 
 logger = get_logger(__name__)
 
-_BASE_INSTRUCTIONS = """You are a NodeJS expert who knows how to code in TypeScript and all the CLI commands around it.
+_BASE_INSTRUCTIONS = """You are an expert software engineer who implements changes across common stacks.
 
 Your job is to deliver whatever the user asks for.
 
@@ -130,6 +132,7 @@ def build_coder_system_prompt(
 """
     )
 
+
 def create_github_coder_agent(
     backend: object,
     *,
@@ -172,9 +175,7 @@ def run_agent_on_issue(
     if env_identity:
         (an, ae), (cn, ce) = env_identity
         git_author_pair = (an, ae)
-        git_committer_pair = (
-            (cn, ce) if (cn != an or ce != ae) else None
-        )
+        git_committer_pair = (cn, ce) if (cn != an or ce != ae) else None
     else:
         api_id = github_bot_git_identity()
         git_author_pair = api_id
@@ -281,7 +282,7 @@ You are the **coder**, not a reviewer. This run updates an **existing open PR** 
 real code changes on that PR’s **head branch** and pushing them so the PR diff updates.
 
 - **Do not** treat this as a code review: do not spend the run only on ``gh pr review`` or
-  line-by-line commentary unless the user explicitly asked for review-only output.
+  line-by-line commentary. 
 - **Do** implement fixes and features: edit files, run tests/lint if appropriate, **commit**
   (🤖 in the message), and **push** to the same head branch that the PR already uses.
 - **Do not** open a second PR for this work; push to the existing branch so the current PR
@@ -313,9 +314,7 @@ def run_coder_on_pr(
     if env_identity:
         (an, ae), (cn, ce) = env_identity
         git_author_pair = (an, ae)
-        git_committer_pair = (
-            (cn, ce) if (cn != an or ce != ae) else None
-        )
+        git_committer_pair = (cn, ce) if (cn != an or ce != ae) else None
     else:
         api_id = github_bot_git_identity()
         git_author_pair = api_id
