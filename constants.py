@@ -116,7 +116,7 @@ def daytona_sandbox_snapshot() -> str | None:
 
     Defaults to :data:`DEFAULT_DAYTONA_SNAPSHOT`. Override with ``DAYTONA_SNAPSHOT``.
     Set ``DAYTONA_SNAPSHOT`` to ``none`` or ``-`` to use Daytona's stock language
-    snapshots instead (see :func:`daytona_sandbox_language_or_default`).
+    snapshots instead.
     """
     raw = os.environ.get("DAYTONA_SNAPSHOT")
     if raw is None:

@@ -39,14 +39,12 @@ def build_sandbox_env_vars(
 ) -> dict[str, str]:
     """
     Environment inside the sandbox for ``git`` / ``gh``.
-
-    Sets ``WORKFLOW_REPO_ABS`` / ``WORKFLOW_REPO_REL`` so the model can resolve the clone
-    location without guessing ``/repo`` vs ``/home/...``.
     """
     rel = f"repos/{repo_name}"
     env: dict[str, str] = {
         "GH_TOKEN": gh_token,
-        "PATH": _daytona_path("/"),
+        "HOME": "/root",
+        "PATH": _daytona_path("/root"),
         "WORKFLOW_REPO_REL": rel,
         "WORKFLOW_REPO_ABS": f"/{rel}",
     }
@@ -85,14 +83,11 @@ def create_daytona_agent_session(
     """
     client = Daytona()
     snap = daytona_sandbox_snapshot()
-    custom_snapshot = snap is not None
-    os_user = daytona_sandbox_os_user(custom_snapshot=custom_snapshot)
     params = CreateSandboxFromSnapshotParams(
         snapshot=snap,
         env_vars=env_vars,
         labels={"run_id": run_id, "app": "greagent-github-deep-agent"},
         ephemeral=True,
-        os_user=os_user,
     )
     sandbox = client.create(params, timeout=create_timeout_sec)
     backend = DaytonaSandbox(sandbox=sandbox, timeout=30 * 60)

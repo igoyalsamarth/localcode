@@ -1,6 +1,4 @@
 # Minimal GitHub agent sandbox: git + GitHub CLI only (lint/format/test stay in CI).
-# OS user matches the app bot-style identity used in the container; git author for commits
-# still comes from GIT_AUTHOR_* in the worker env (e.g. YourApp[bot] + users.noreply email).
 
 FROM ubuntu:22.04
 
