@@ -231,9 +231,7 @@ Remember: Use inline comments for specific code feedback, and the summary commen
                 "GITHUB_PR_HEAD_SHA": pr.head_sha,
             }
         )
-        backend, session = create_daytona_agent_session(
-            run_id, env_vars, sandbox_home=sandbox_home
-        )
+        backend, session = create_daytona_agent_session(run_id, env_vars)
         daytona_session = session
         agent = create_github_reviewer_agent(backend, system_prompt=system_prompt)
         stream_deep_agent(agent, prompt, stream_config)

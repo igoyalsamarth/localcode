@@ -22,7 +22,6 @@ from agents.github_llm import get_github_deep_agent_llm
 from agents.usage_callback import AgentLlmUsageCallbackHandler
 from constants import (
     AGENT_LLM_PROVIDER,
-    daytona_sandbox_home,
     git_identity_from_env,
 )
 from logger import get_logger
@@ -47,7 +46,6 @@ from services.github.workflow_usage import (
 from services.github.installation_token import (
     get_installation_token_for_repo,
     github_bot_git_identity,
-    installation_token_env,
 )
 from services.github.issue_payload import IssueOpenedForCoder
 
@@ -158,7 +156,6 @@ def run_agent_on_issue(
 
     full_name = issue.full_name
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
-    sandbox_home = daytona_sandbox_home()
     system_prompt = _BASE_INSTRUCTIONS
     prompt = f"""In the repository {issue.repo_url} (repo folder: repos/{issue.repo_name}):
 
@@ -198,11 +195,8 @@ Please implement the requested changes:
             git_author=git_author_pair,
             git_committer=git_committer_pair,
             repo_name=issue.repo_name,
-            sandbox_home=sandbox_home,
         )
-        backend, session = create_daytona_agent_session(
-            run_id, env_vars, sandbox_home=sandbox_home
-        )
+        backend, session = create_daytona_agent_session(run_id, env_vars)
         daytona_session = session
         agent = create_github_coder_agent(backend, system_prompt=system_prompt)
         stream_deep_agent(agent, prompt, stream_config)
@@ -271,7 +265,6 @@ def run_coder_on_pr(
 
     full_name = pr.full_name
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
-    sandbox_home = daytona_sandbox_home()
     system_prompt = _BASE_INSTRUCTIONS + _PR_CODER_SYSTEM_SUFFIX
 
     prior_discussion = fetch_pr_conversation_context_for_llm(
@@ -335,11 +328,8 @@ If there is truly nothing to implement, say so in one PR comment and stop—but 
             git_author=git_author_pair,
             git_committer=git_committer_pair,
             repo_name=pr.repo_name,
-            sandbox_home=sandbox_home,
         )
-        backend, session = create_daytona_agent_session(
-            run_id, env_vars, sandbox_home=sandbox_home
-        )
+        backend, session = create_daytona_agent_session(run_id, env_vars)
         daytona_session = session
         agent = create_github_coder_agent(backend, system_prompt=system_prompt)
         stream_deep_agent(agent, prompt, stream_config)

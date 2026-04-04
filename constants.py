@@ -150,17 +150,6 @@ def daytona_sandbox_snapshot() -> str | None:
     return s
 
 
-def daytona_sandbox_language_explicit() -> str | None:
-    """
-    Optional ``language`` hint for ``CreateSandboxFromSnapshotParams``: ``python``,
-    ``typescript``, or ``javascript``. Empty env means "let the backend infer".
-    """
-    s = os.environ.get("DAYTONA_SANDBOX_LANGUAGE", "").strip().lower()
-    if s in ("python", "typescript", "javascript"):
-        return s
-    return None
-
-
 def daytona_sandbox_os_user(*, custom_snapshot: bool) -> str | None:
     """
     Value for Daytona ``CreateSandboxFromSnapshotParams.os_user``.
@@ -181,19 +170,6 @@ def daytona_sandbox_os_user(*, custom_snapshot: bool) -> str | None:
     if custom_snapshot:
         return daytona_sandbox_user()
     return None
-
-
-def daytona_sandbox_language_or_default() -> str | None:
-    """
-    Language for Daytona create params: explicit env, else stock ``typescript`` when no
-    custom snapshot, else ``None`` (custom image handles its own toolchains).
-    """
-    explicit = daytona_sandbox_language_explicit()
-    if explicit is not None:
-        return explicit
-    if daytona_sandbox_snapshot() is not None:
-        return None
-    return "typescript"
 
 
 def git_identity_from_env() -> tuple[tuple[str, str], tuple[str, str]] | None:
