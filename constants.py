@@ -149,7 +149,7 @@ def get_rabbitmq_url() -> str:
     return os.environ.get("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 
 
-# Daytona configuration
+# Daytona configuration (install skip: services.github.agent_daytona.ensure_github_cli_installed)
 DAYTONA_INSTALL_GH_CLI = os.environ.get("DAYTONA_INSTALL_GH_CLI", "true")
 GITHUB_CLI_VERSION = os.environ.get("GITHUB_CLI_VERSION", "2.88.1")
 

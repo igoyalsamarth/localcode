@@ -4,9 +4,9 @@ Daytona sandbox lifecycle for GitHub deep agents (issue + PR workflows).
 See LangChain Deep Agents sandboxes:
 https://docs.langchain.com/oss/python/deepagents/sandboxes#daytona
 
-Uses Daytona's stock snapshot (see ``language=`` in :func:`create_daytona_agent_session`).
-If ``gh`` is missing, we install it into the sandbox user's ``~/bin`` after create (POSIX
-``sh``-safe script; no bash-only ``pipefail``).
+Uses Daytona's TypeScript stock snapshot unless overridden (see :func:`create_daytona_agent_session`).
+When :data:`~constants.DAYTONA_INSTALL_GH_CLI` is enabled and ``gh`` is missing, we install into
+``<sandbox home>/bin`` after create (POSIX ``sh``-safe script; no bash-only ``pipefail``).
 """
 
 from __future__ import annotations
@@ -22,15 +22,47 @@ from daytona import (
 )
 from langchain_daytona import DaytonaSandbox
 
-from constants import GITHUB_CLI_VERSION, daytona_sandbox_home
+from constants import DAYTONA_INSTALL_GH_CLI, GITHUB_CLI_VERSION, daytona_sandbox_home
 from logger import get_logger
 
 logger = get_logger(__name__)
 
 
+def _install_gh_cli_enabled() -> bool:
+    v = DAYTONA_INSTALL_GH_CLI.strip().lower()
+    return v not in ("0", "false", "no", "off", "")
+
+
+# Typical Linux FHS PATH; ``_daytona_path`` prepends ``<home>/bin`` for bundled ``gh``.
+_STANDARD_TOOL_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+
 def _daytona_path(sandbox_home: str) -> str:
     """Ensure ``~/bin`` (for bundled ``gh``) is first on ``PATH``."""
-    return f"{sandbox_home}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    return f"{sandbox_home}/bin:{_STANDARD_TOOL_PATH}"
+
+
+def _posix_sh_gh_install_script(*, bin_dir: str, version: str) -> str:
+    """Download official ``gh`` tarball into ``bin_dir`` (POSIX ``sh`` only; no ``pipefail``)."""
+    qdir = shlex.quote(bin_dir)
+    return f"""
+set -eu
+BIN={qdir}
+mkdir -p "$BIN"
+arch=$(uname -m)
+case "$arch" in
+  x86_64) arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo "unsupported arch: $arch" >&2; exit 1 ;;
+esac
+rm -f /tmp/gh.tgz
+curl -fsSL "https://github.com/cli/cli/releases/download/v{version}/gh_{version}_linux_$arch.tar.gz" -o /tmp/gh.tgz
+tar -xzf /tmp/gh.tgz -C /tmp
+cp "/tmp/gh_{version}_linux_$arch/bin/gh" "$BIN/gh"
+chmod +x "$BIN/gh"
+rm -f /tmp/gh.tgz
+"$BIN/gh" version
+"""
 
 
 def build_sandbox_env_vars(
@@ -83,50 +115,31 @@ def ensure_github_cli_installed(
     path_for_check: str,
 ) -> None:
     """
-    Install the ``gh`` binary into ``<sandbox_home>/bin`` when missing.
+    Put ``gh`` in ``<sandbox_home>/bin`` when it is not already on ``PATH``.
 
-    Daytona runs commands via ``sh`` (often dash): **do not use bash-only options** like
-    ``pipefail``. Set ``DAYTONA_INSTALL_GH_CLI=false`` to skip when ``gh`` is preinstalled.
+    Uses POSIX ``sh`` (Daytona often runs dash)—no bash-only options like ``pipefail``.
+    Disable with ``DAYTONA_INSTALL_GH_CLI=false`` if the image already ships ``gh``.
 
-    ``path_for_check`` is the ``PATH`` used to detect an existing ``gh`` (defaults to
-    ``_daytona_path(sandbox_home)``).
+    ``path_for_check`` is typically :func:`_daytona_path` for ``sandbox_home`` (see
+    :func:`create_daytona_agent_session`).
     """
-    home = sandbox_home
-    bin_dir = f"{home}/bin"
-    check_path = path_for_check
-    check = sandbox.process.exec(
-        "command -v gh >/dev/null 2>&1",
-        env={"PATH": check_path},
-        timeout=60,
-    )
-    if check.exit_code == 0:
+    if not _install_gh_cli_enabled():
         return
-    ver = GITHUB_CLI_VERSION.strip() or "2.88.1"
-    # POSIX ``sh`` only (no ``pipefail``); explicit PATH so curl/tar resolve on minimal images.
-    script = f"""
-set -eu
-BIN={shlex.quote(bin_dir)}
-mkdir -p "$BIN"
-arch=$(uname -m)
-case "$arch" in
-  x86_64) arch=amd64 ;;
-  aarch64|arm64) arch=arm64 ;;
-  *) echo "unsupported arch: $arch" >&2; exit 1 ;;
-esac
-rm -f /tmp/gh.tgz
-curl -fsSL "https://github.com/cli/cli/releases/download/v{ver}/gh_{ver}_linux_$arch.tar.gz" -o /tmp/gh.tgz
-tar -xzf /tmp/gh.tgz -C /tmp
-ROOT="/tmp/gh_{ver}_linux_$arch"
-cp "$ROOT/bin/gh" "$BIN/gh"
-chmod +x "$BIN/gh"
-rm -f /tmp/gh.tgz
-"$BIN/gh" version
-"""
-    exec_env = {
-        "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-    }
+
+    bin_dir = f"{sandbox_home}/bin"
+    probe = _exec_sh(
+        sandbox,
+        "command -v gh >/dev/null 2>&1",
+        timeout=60,
+        env={"PATH": path_for_check},
+    )
+    if probe.exit_code == 0:
+        return
+
+    version = GITHUB_CLI_VERSION.strip() or "2.88.1"
+    script = _posix_sh_gh_install_script(bin_dir=bin_dir, version=version)
     try:
-        r = _exec_sh(sandbox, script, timeout=180, env=exec_env)
+        r = _exec_sh(sandbox, script, timeout=180, env={"PATH": _STANDARD_TOOL_PATH})
         if r.exit_code != 0:
             logger.warning(
                 "Could not install GitHub CLI in sandbox (exit=%s): %s",
