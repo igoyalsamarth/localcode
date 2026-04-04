@@ -126,7 +126,8 @@ def daytona_sandbox_enabled() -> bool:
 def daytona_sandbox_user() -> str:
     """
     Linux user in the custom GHCR sandbox image (default ``greagents``), aligned with the
-    GitHub App bot identity for this product. Must match the image ``SANDBOX_USER`` build-arg.
+    GitHub App bot identity for this product. Must match ``SANDBOX_USER`` in
+    ``docker/agent-sandbox/Dockerfile`` (and ``DAYTONA_OS_USER`` when using that snapshot).
     """
     u = os.environ.get("DAYTONA_SANDBOX_USER", "").strip()
     return u if u else "greagents"
@@ -134,8 +135,9 @@ def daytona_sandbox_user() -> str:
 
 def daytona_sandbox_home() -> str:
     """
-    Sandbox home for ``WORKFLOW_REPO_ABS`` / ``PATH``. Override ``DAYTONA_AGENT_HOME`` if
-    the image layout differs; otherwise defaults to ``/home/<DAYTONA_SANDBOX_USER>``.
+    Sandbox home for ``WORKFLOW_REPO_ABS`` / ``PATH``. For the image built from
+    ``docker/agent-sandbox/``, this matches ``WORKDIR`` (``/home/<SANDBOX_USER>``). Override
+    ``DAYTONA_AGENT_HOME`` if the snapshot uses a different layout.
     """
     h = os.environ.get("DAYTONA_AGENT_HOME", "").strip()
     return h if h else f"/home/{daytona_sandbox_user()}"

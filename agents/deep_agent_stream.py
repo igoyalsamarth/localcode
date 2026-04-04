@@ -57,7 +57,7 @@ def stream_deep_agent(agent: object, user_prompt: str, config: dict) -> None:
                     if tc.get("name"):
                         logger.info("[%s] Tool call: %s", source, tc["name"])
                     if tc.get("args"):
-                        logger.debug("[%s] Tool args: %s", source, tc["args"])
+                        logger.info("[%s] Tool args: %s", source, tc["args"])
 
             if msg.type == "tool":
                 logger.info(
@@ -68,4 +68,6 @@ def stream_deep_agent(agent: object, user_prompt: str, config: dict) -> None:
                 )
 
             if msg.type == "ai" and msg.content and not tool_call_chunks:
-                logger.debug("[%s] Agent output: %s", source, _render_content(msg.content))
+                logger.info(
+                    "[%s] Agent output: %s", source, _render_content(msg.content)
+                )

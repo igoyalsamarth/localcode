@@ -4,8 +4,16 @@
 #   GRAGENT_IMAGE=ghcr.io/your-org/gragent-be:sha-abc1234
 #
 # Use `docker compose` (v2+ plugin; v5.x is fine). Do not use legacy `docker-compose` 1.x with these images.
-# Run: docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
-# Or: ./scripts/deploy-prod.sh
+# Routine deploy: ./scripts/deploy-prod.sh (or CI) — pulls/recreates api-backend + worker only.
+# Full stack / first host: `docker compose -f docker-compose.prod.yml up -d` (starts RabbitMQ too).
+#
+# RabbitMQ uses a named volume and is not torn down on routine deploys. Upgrade the broker
+# image explicitly when needed (e.g. pull rabbitmq && up -d rabbitmq).
+#
+# If an older ephemeral RabbitMQ container still exists without this volume, recreate it once:
+#   docker stop greagent-rabbitmq && docker rm greagent-rabbitmq
+#   docker compose -f docker-compose.prod.yml up -d rabbitmq
+# (Queues are recreated by workers on use; only in-flight messages are lost.)
 
 services:
   rabbitmq:
@@ -17,6 +25,8 @@ services:
       RABBITMQ_DEFAULT_USER: guest
       RABBITMQ_DEFAULT_PASS: guest
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: -rabbit log [{console,[{enabled,false}]}]
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -62,3 +72,6 @@ services:
 networks:
   greagent-network:
     driver: bridge
+
+volumes:
+  rabbitmq_data:

@@ -127,6 +127,8 @@ def build_coder_system_prompt(
 
 - After clone, this repository’s files are under **{abs_hint}** (also in ``$WORKFLOW_REPO_ABS``).
 - For ``read_file`` / ``write_file`` / ``edit_file``, use that **absolute** path prefix — do not invent roots like ``/repo/`` or top-level ``/repos/`` (those are wrong).
+- For **shell** commands (``ls``, ``grep``, ``find``, ``cd``), ignore the generic “no absolute paths” rule above: either ``cd "$WORKFLOW_REPO_ABS"`` and use **relative** paths inside the repo, or stay in ``$HOME`` and use ``repos/{repo_name}/...``. Avoid hand-typing ``/home/...`` (may not match ``$HOME``).
+- Under that prefix, **do not guess** paths (e.g. ``src/app.ts``, ``main.py``); list or search the tree first, then open only paths that exist.
 - Shell ``pwd`` is usually your home (e.g. ``{home}``); ``repos/{repo_name}`` is relative to that home.
 - If unsure, run ``printenv WORKFLOW_REPO_ABS`` once instead of searching the filesystem.
 """

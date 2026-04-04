@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Pull images and recreate the prod stack (api, worker, rabbitmq).
-# Uses fixed container_name values; removes them by name first to avoid conflicts when
+# Pull app images and recreate api-backend + worker only. RabbitMQ is left running with a
+# persisted volume (docker-compose.prod.yml); recreate the broker only when you upgrade it.
+# Uses fixed container_name values; removes api/worker by name to avoid conflicts when
 # COMPOSE_PROJECT_NAME changes or a previous deploy left orphans.
 # Requires: `docker compose` (Compose v2+ as a CLI plugin). Legacy `docker-compose` 1.x is unsupported.
 # (e.g. in .env: GRAGENT_IMAGE=ghcr.io/org/gragent-be:latest).
@@ -43,14 +44,13 @@ docker_rm_matching() {
   fi
 }
 
-run_compose -f docker-compose.prod.yml pull rabbitmq api-backend worker
+run_compose -f docker-compose.prod.yml pull api-backend worker
 
-# Drop old instances by name (survives project renames e.g. app → greagent; avoids recreate conflicts).
-docker stop -t 30 greagent-rabbitmq greagent-api-backend greagent-worker 2>/dev/null || true
-docker rm -f greagent-rabbitmq greagent-api-backend greagent-worker 2>/dev/null || true
-docker_rm_matching "name=greagent-rabbitmq"
+# Drop old api/worker by name (RabbitMQ is not stopped here).
+docker stop -t 30 greagent-api-backend greagent-worker 2>/dev/null || true
+docker rm -f greagent-api-backend greagent-worker 2>/dev/null || true
 docker_rm_matching "name=greagent-api-backend"
 docker_rm_matching "name=greagent-worker"
 docker_rm_matching "name=app_worker"
 
-run_compose -f docker-compose.prod.yml up -d --remove-orphans
+run_compose -f docker-compose.prod.yml up -d --remove-orphans api-backend worker

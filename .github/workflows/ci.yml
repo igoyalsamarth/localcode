@@ -218,11 +218,11 @@ jobs:
               ids=$(docker ps -aq --filter "$1" 2>/dev/null || true)
               if [ -n "$ids" ]; then docker rm -f $ids; fi
             }
-            run_compose -f docker-compose.prod.yml pull rabbitmq api-backend worker
-            docker stop -t 30 greagent-rabbitmq greagent-api-backend greagent-worker 2>/dev/null || true
-            docker rm -f greagent-rabbitmq greagent-api-backend greagent-worker 2>/dev/null || true
-            docker_rm_matching "name=greagent-rabbitmq"
+            # App images only; RabbitMQ stays up with persisted data (see docker-compose.prod.yml).
+            run_compose -f docker-compose.prod.yml pull api-backend worker
+            docker stop -t 30 greagent-api-backend greagent-worker 2>/dev/null || true
+            docker rm -f greagent-api-backend greagent-worker 2>/dev/null || true
             docker_rm_matching "name=greagent-api-backend"
             docker_rm_matching "name=greagent-worker"
             docker_rm_matching "name=app_worker"
-            run_compose -f docker-compose.prod.yml up -d --remove-orphans
+            run_compose -f docker-compose.prod.yml up -d --remove-orphans api-backend worker
