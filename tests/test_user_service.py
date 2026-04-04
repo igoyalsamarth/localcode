@@ -72,7 +72,7 @@ class TestUserService:
         assert org.name == "testuser's workspace"
 
         assert org.owner_user_id == user.id
-        assert org.promotional_balance_usd == SIGNUP_PROMO_WALLET_USD
+        assert org.wallet_balance_usd == SIGNUP_PROMO_WALLET_USD
 
     def test_get_or_create_personal_workspace_idempotent(self, db_session):
         user = create_or_update_user(

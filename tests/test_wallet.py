@@ -1,6 +1,5 @@
 """Wallet usage charge formula and Dodo minor-unit conversion."""
 
-from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -32,20 +31,17 @@ class TestUsageChargeUsd:
 
 
 @pytest.mark.unit
-class TestCreditMergesPromo:
-    def test_first_paid_credit_merges_remaining_promo_then_adds_amount(self, db_session):
+class TestCreditWallet:
+    def test_paid_credit_adds_to_wallet(self, db_session):
         user = User(email="c@e.com", username="c", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        exp = datetime.now(timezone.utc) + timedelta(days=20)
         org = Organization(
             name="C",
             is_personal=False,
             created_by_user_id=user.id,
             owner_user_id=user.id,
-            wallet_balance_usd=Decimal("0"),
-            promotional_balance_usd=Decimal("5"),
-            promotional_balance_expires_at=exp,
+            wallet_balance_usd=Decimal("5"),
         )
         db_session.add(org)
         db_session.commit()
@@ -54,23 +50,18 @@ class TestCreditMergesPromo:
         db_session.commit()
         org = db_session.get(Organization, oid)
         assert org.wallet_balance_usd == Decimal("15")
-        assert org.promotional_balance_usd == Decimal("0")
-        assert org.promotional_balance_expires_at is None
         assert organization_spendable_balance_usd(org) == Decimal("15")
 
-    def test_paid_credit_merges_partially_spent_promo(self, db_session):
+    def test_paid_credit_stacks_on_existing_balance(self, db_session):
         user = User(email="c2@e.com", username="c2", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        exp = datetime.now(timezone.utc) + timedelta(days=10)
         org = Organization(
             name="C2",
             is_personal=False,
             created_by_user_id=user.id,
             owner_user_id=user.id,
-            wallet_balance_usd=Decimal("0"),
-            promotional_balance_usd=Decimal("3"),
-            promotional_balance_expires_at=exp,
+            wallet_balance_usd=Decimal("3"),
         )
         db_session.add(org)
         db_session.commit()
@@ -79,22 +70,17 @@ class TestCreditMergesPromo:
         db_session.commit()
         org = db_session.get(Organization, oid)
         assert org.wallet_balance_usd == Decimal("13")
-        assert org.promotional_balance_usd == Decimal("0")
-        assert org.promotional_balance_expires_at is None
 
-    def test_paid_credit_after_promo_expired_does_not_revive_promo(self, db_session):
+    def test_paid_credit_from_zero(self, db_session):
         user = User(email="c3@e.com", username="c3", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        past = datetime.now(timezone.utc) - timedelta(days=1)
         org = Organization(
             name="C3",
             is_personal=False,
             created_by_user_id=user.id,
             owner_user_id=user.id,
             wallet_balance_usd=Decimal("0"),
-            promotional_balance_usd=Decimal("5"),
-            promotional_balance_expires_at=past,
         )
         db_session.add(org)
         db_session.commit()
@@ -103,8 +89,6 @@ class TestCreditMergesPromo:
         db_session.commit()
         org = db_session.get(Organization, oid)
         assert org.wallet_balance_usd == Decimal("10")
-        assert org.promotional_balance_usd == Decimal("0")
-        assert org.promotional_balance_expires_at is None
 
 
 @pytest.mark.unit
@@ -166,7 +150,7 @@ class TestWalletAllowsAgentRun:
         db_session.commit()
         assert wallet_allows_agent_run(db_session, "o2", "r2") is True
 
-    def test_allows_when_only_promotional_balance(self, db_session):
+    def test_allows_when_wallet_has_signup_or_topup_credit(self, db_session):
         user = User(email="promo@e.com", username="promo", auth_provider="github")
         db_session.add(user)
         db_session.flush()
@@ -175,9 +159,7 @@ class TestWalletAllowsAgentRun:
             is_personal=False,
             created_by_user_id=user.id,
             owner_user_id=user.id,
-            wallet_balance_usd=Decimal("0"),
-            promotional_balance_usd=Decimal("5"),
-            promotional_balance_expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+            wallet_balance_usd=Decimal("5"),
         )
         db_session.add(org)
         db_session.flush()
@@ -192,7 +174,7 @@ class TestWalletAllowsAgentRun:
         db_session.commit()
         assert wallet_allows_agent_run(db_session, "op", "rp") is True
 
-    def test_deduct_draws_promotional_before_wallet(self, db_session):
+    def test_deduct_from_wallet(self, db_session):
         user = User(email="d@e.com", username="d", auth_provider="github")
         db_session.add(user)
         db_session.flush()
@@ -201,9 +183,7 @@ class TestWalletAllowsAgentRun:
             is_personal=False,
             created_by_user_id=user.id,
             owner_user_id=user.id,
-            wallet_balance_usd=Decimal("10"),
-            promotional_balance_usd=Decimal("5"),
-            promotional_balance_expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+            wallet_balance_usd=Decimal("15"),
         )
         db_session.add(org)
         db_session.commit()
@@ -212,27 +192,19 @@ class TestWalletAllowsAgentRun:
         deduct_organization_wallet_for_llm_run(db_session, oid, Decimal("0"))
         db_session.commit()
         org = db_session.get(Organization, oid)
-        assert org.promotional_balance_usd == Decimal("5") - Decimal("0.05")
-        assert org.wallet_balance_usd == Decimal("10")
+        assert org.wallet_balance_usd == Decimal("15") - Decimal("0.05")
 
-    def test_expired_promotional_dropped_from_spendable(self, db_session):
+    def test_spendable_matches_wallet(self, db_session):
         user = User(email="x@e.com", username="x", auth_provider="github")
         db_session.add(user)
         db_session.flush()
-        past = datetime.now(timezone.utc) - timedelta(days=1)
         org = Organization(
             name="X",
             is_personal=False,
             created_by_user_id=user.id,
             owner_user_id=user.id,
-            wallet_balance_usd=Decimal("3"),
-            promotional_balance_usd=Decimal("5"),
-            promotional_balance_expires_at=past,
+            wallet_balance_usd=Decimal("8"),
         )
         db_session.add(org)
         db_session.commit()
-        assert organization_spendable_balance_usd(org) == Decimal("3")
-        db_session.commit()
-        org = db_session.get(Organization, org.id)
-        assert org.promotional_balance_usd == Decimal("0")
-        assert org.promotional_balance_expires_at is None
+        assert organization_spendable_balance_usd(org) == Decimal("8")

@@ -7,9 +7,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from constants import SIGNUP_PROMO_WALLET_USD
 from model.tables import Organization, User
 from logger import get_logger
-from services.wallet import signup_promotional_credit_defaults
 
 logger = get_logger(__name__)
 
@@ -54,7 +54,7 @@ def get_or_create_personal_workspace(session: Session, user: User) -> Organizati
     """
     Return the user's personal organization, creating it on first sign-in.
 
-    Signup promotional credit applies. Name: ``{login}'s workspace``.
+    Initial wallet credit applies (``SIGNUP_PROMO_WALLET_USD``). Name: ``{login}'s workspace``.
     """
     stmt = (
         select(Organization)
@@ -72,14 +72,12 @@ def get_or_create_personal_workspace(session: Session, user: User) -> Organizati
     display = f"{user.username}'s workspace"
     logger.info("Creating personal organization: %s for %s", display, user.username)
 
-    promo_usd, promo_expires = signup_promotional_credit_defaults()
     org = Organization(
         name=display,
         is_personal=True,
         created_by_user_id=user.id,
         owner_user_id=user.id,
-        promotional_balance_usd=promo_usd,
-        promotional_balance_expires_at=promo_expires,
+        wallet_balance_usd=SIGNUP_PROMO_WALLET_USD,
     )
     session.add(org)
     session.flush()

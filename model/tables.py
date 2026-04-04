@@ -86,12 +86,6 @@ class Organization(Base):
     wallet_balance_usd: Mapped[Decimal] = mapped_column(
         Numeric(18, 8), nullable=False, default=Decimal("0")
     )
-    promotional_balance_usd: Mapped[Decimal] = mapped_column(
-        Numeric(18, 8), nullable=False, default=Decimal("0")
-    )
-    promotional_balance_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     owner: Mapped["User"] = relationship(

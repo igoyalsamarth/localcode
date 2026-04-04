@@ -258,7 +258,7 @@ async def get_billing_subscription(
     user_id: UUID = Depends(get_current_user_id),
     org_id: UUID = Depends(get_current_org_id),
 ):
-    """Return Dodo linkage, spendable wallet total (paid + active promo), and subscription."""
+    """Return Dodo linkage, spendable wallet total, and subscription."""
     with session_scope() as db:
         require_org_membership(db, user_id, org_id)
         org = db.get(Organization, org_id)
