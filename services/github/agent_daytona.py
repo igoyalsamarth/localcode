@@ -18,7 +18,6 @@ from daytona import (
 from langchain_daytona import DaytonaSandbox
 
 from constants import (
-    daytona_sandbox_home,
     daytona_sandbox_snapshot,
 )
 from logger import get_logger
@@ -37,21 +36,17 @@ def build_sandbox_env_vars(
     git_author: tuple[str, str] | None,
     git_committer: tuple[str, str] | None,
     repo_name: str,
-    sandbox_home: str | None = None,
 ) -> dict[str, str]:
     """
     Environment inside the sandbox for ``git`` / ``gh``.
-
-    Sets ``WORKFLOW_REPO_ABS`` / ``WORKFLOW_REPO_REL`` so the model can resolve the clone
-    location without guessing ``/repo`` vs ``/home/...``.
     """
-    home = sandbox_home or daytona_sandbox_home()
     rel = f"repos/{repo_name}"
     env: dict[str, str] = {
         "GH_TOKEN": gh_token,
-        "PATH": _daytona_path(home),
+        "HOME": "/root",
+        "PATH": _daytona_path("/root"),
         "WORKFLOW_REPO_REL": rel,
-        "WORKFLOW_REPO_ABS": f"{home}/{rel}",
+        "WORKFLOW_REPO_ABS": f"/{rel}",
     }
     if git_author:
         an, ae = git_author
@@ -85,9 +80,6 @@ def create_daytona_agent_session(
 
     Snapshot selection: set ``DAYTONA_SNAPSHOT`` to a Daytona-registered snapshot name
     (e.g. minimal git+gh GHCR image). Otherwise uses Daytona's stock snapshot for
-    ``DAYTONA_SANDBOX_LANGUAGE`` or ``typescript``. Custom snapshots default
-    ``os_user`` to :func:`~constants.daytona_sandbox_user` unless ``DAYTONA_OS_USER``
-    overrides (``-`` / ``none`` to leave unset).
     """
     client = Daytona()
     snap = daytona_sandbox_snapshot()

@@ -6,7 +6,6 @@
 #   docker compose -f docker/agent-sandbox/docker-compose.yml push
 #
 # Register the image in Daytona as a snapshot; set DAYTONA_SNAPSHOT in gragent-be.
-# Optional: SANDBOX_USER build-arg must match DAYTONA_SANDBOX_USER (default greagents).
 
 services:
   greagent-agent-sandbox:
@@ -14,5 +13,3 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        SANDBOX_USER: ${SANDBOX_USER:-greagents}

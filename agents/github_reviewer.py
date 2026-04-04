@@ -23,7 +23,6 @@ from agents.reviewer_tools import add_inline_review_comment
 from agents.usage_callback import AgentLlmUsageCallbackHandler
 from constants import (
     AGENT_LLM_PROVIDER,
-    daytona_sandbox_home,
     git_identity_from_env,
 )
 from logger import get_logger
@@ -91,7 +90,7 @@ For GitHub operations, prefer the ``gh`` CLI (``gh pr review``, ``gh pr comment`
 
 def create_github_reviewer_agent(backend: object, *, system_prompt: str) -> object:
     """
-    Build the deep agent graph for the given backend (local virtual FS or Daytona sandbox).
+    Build the deep agent graph for the given backend (Daytona sandbox).
 
     For ``LocalShellBackend``, construct the backend **inside** ``installation_token_env``
     so ``inherit_env=True`` snapshots ``GH_TOKEN`` and git identity.
@@ -141,7 +140,6 @@ def run_agent_on_pr(
 
     full_name = pr.full_name
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
-    sandbox_home = daytona_sandbox_home()
     system_prompt = _BASE_INSTRUCTIONS
     prompt = f"""In the repository {pr.repo_url} (repo folder: repos/{pr.repo_name}):
 
@@ -221,7 +219,6 @@ Remember: Use inline comments for specific code feedback, and the summary commen
             git_author=git_author_pair,
             git_committer=git_committer_pair,
             repo_name=pr.repo_name,
-            sandbox_home=sandbox_home,
         )
         env_vars.update(
             {
