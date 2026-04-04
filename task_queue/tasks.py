@@ -4,7 +4,7 @@ import dramatiq
 
 from db.repo_agent_lock import hold_github_repo_agent_lock
 from logger import get_logger
-from task_queue.broker import broker
+from task_queue.broker import GITHUB_AGENT_QUEUE_NAME, broker
 
 logger = get_logger(__name__)
 
@@ -12,7 +12,7 @@ dramatiq.set_broker(broker)
 
 # Single queue for coder + reviewer so jobs are processed in FIFO order per consumer
 # (tighter than splitting across ``github_coder`` / ``github_reviewer`` queues).
-_GITHUB_AGENT_QUEUE = "github_agent"
+_GITHUB_AGENT_QUEUE = GITHUB_AGENT_QUEUE_NAME
 _GITHUB_AGENT_ACTOR_OPTIONS = {"max_retries": 3, "time_limit": 3600000}
 
 

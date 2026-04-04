@@ -9,6 +9,9 @@ from logger import get_logger
 
 logger = get_logger(__name__)
 
+# Single Dramatiq queue for coder + reviewer actors (must match ``task_queue.tasks``).
+GITHUB_AGENT_QUEUE_NAME = "github_agent"
+
 
 class WorkerProcessDbMiddleware(Middleware):
     """
@@ -25,6 +28,17 @@ class WorkerProcessDbMiddleware(Middleware):
 
         create_tables()
         logger.info("Database tables ensured")
+
+        # Dramatiq RabbitMQ: ``Worker`` starts consumers for both the main queue and
+        # ``{name}.DQ`` in parallel. The delay consumer may call ``consume(ensure=True)``
+        # before the main consumer has run ``_ensure_queue``, so ``declare_queue`` skips
+        # creating ``.DQ`` / ``.XQ`` and RabbitMQ returns NOT_FOUND. Declaring here runs once
+        # per worker subprocess after ``import_broker`` but before ``Worker.start()``.
+        try:
+            broker.declare_queue(GITHUB_AGENT_QUEUE_NAME, ensure=True)
+        except TypeError:
+            # Non-RabbitMQ brokers (e.g. stubs) may not support ``ensure``.
+            pass
 
 
 def create_broker() -> RabbitmqBroker:
