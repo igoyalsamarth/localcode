@@ -73,9 +73,8 @@ GITHUB_APP_PRIVATE_KEY = os.environ.get("GITHUB_APP_PRIVATE_KEY", "")
 
 CLIENT_URL = os.environ.get("CLIENT_URL", "http://localhost:3000")
 
-# Signup promo: separate from paid ``wallet_balance_usd`` (top-ups / subscriptions add there only).
+# Initial wallet credit for new personal orgs (same balance pool as top-ups / subscription).
 SIGNUP_PROMO_WALLET_USD = Decimal(os.environ.get("SIGNUP_PROMO_WALLET_USD", "5"))
-SIGNUP_PROMO_DURATION_DAYS = int(os.environ.get("SIGNUP_PROMO_DURATION_DAYS", "30"))
 
 # Dodo Payments (checkout + webhooks). Keys must never be exposed to the browser.
 DODO_PAYMENTS_API_KEY = os.environ.get("DODO_PAYMENTS_API_KEY", "").strip()
