@@ -45,29 +45,43 @@ _BASE_INSTRUCTIONS = """You are an expert reviewer for polyglot codebases.
 
 Your job is to review pull requests and provide constructive feedback.
 
-## Sandbox layout (important)
+Folder Structure:
+/
+|-repos
+  |-example-repo-1
+  |-example-repo-2
+You operate inside a sandbox where you are only allowed to perform actions in children (repo/<repo-name>).
 
-- ``HOME`` is ``/root``. Clone every GitHub repo to an **absolute** path: ``/root/repos/<repository-name>``.
-- Environment variable ``WORKFLOW_REPO_ABS`` is set to that clone root for this run (same value you should use in tools).
+## Workspace Rules
 
-## Shell (``execute``)
+- The workspace `repos/<repo-name>` is your working directory for shell commands.
+- All repositories must live inside "repos" directory.
+- When cloning a repo named "example", clone to "repos/example".
 
-- Example: ``git clone <url> /root/repos/my-repo`` then ``cd /root/repos/my-repo``.
-- Prefer **absolute** paths in shell commands so they do not depend on the current working directory.
-- For ``git fetch`` / ``git pull`` / ``git push``, pass a bounded ``timeout`` on ``execute`` (e.g. 300–600 seconds) so a stuck network call does not burn the whole sandbox lifetime.
-- Before fetching: run ``git remote -v``. If ``origin`` is plain ``https://github.com/...`` without credentials, set it to use the token: ``git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/<owner>/<repo>.git"`` (same pattern as clone). Otherwise ``git fetch`` can hang waiting for a password that never comes.
+Correct example:
+git clone https://github.com/<repo-name>/example repos/<repo-name>
+cd repos/<repo-name> && git pull
 
-## Filesystem tools (``read_file``, ``write_file``, ``edit_file``, ``ls``, ``glob``, ``grep``)
+Incorrect:
+git clone https://github.com/<repo-name>/example
+cd / && git clone ...
 
-Deep Agents **require paths that start with ``/``**. If you pass a relative path like ``repos/foo/bar``, the runtime normalizes it to ``/repos/foo/bar`` at the **filesystem root**, which is **wrong** here: your clone lives under ``/root/repos/``, not ``/repos/``.
+Shell commands must use paths relative to the current directory.
 
-- **Always** use the full path: ``/root/repos/<repository-name>/<path-inside-repo>``.
-- Good: ``read_file`` on ``/root/repos/localcode-test/src/app.ts``
-- Bad: ``repos/localcode-test/src/app.ts``, ``/repos/localcode-test/src/app.ts``, ``/root/repos/...`` before you cloned, ``/Users/...``, Windows paths.
+Do NOT use absolute paths such as:
+/repos/...
 
-Before reading files, clone if needed, then ``ls`` on ``/root/repos/<repository-name>`` to confirm paths.
+Instead use:
 
-Always start from an empty sandbox: clone first, then explore.
+repos/<repo>
+
+Correct:
+cd repos/example
+
+Incorrect:
+cd /repo/example
+
+Always start by cloning the repository as you start in an empty sandbox.
 
 For GitHub operations, prefer the ``gh`` CLI (``gh pr review``, ``gh pr comment``, …) with ``GH_TOKEN`` in the environment; it is more reliable than raw ``curl``.
 """
@@ -126,9 +140,7 @@ def run_agent_on_pr(
     full_name = pr.full_name
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
     system_prompt = _BASE_INSTRUCTIONS
-    prompt = f"""In the repository {pr.repo_url}.
-
-Clone root for this repo (use for ``read_file`` / ``ls`` / ``glob``): ``/root/repos/{pr.repo_name}`` — matches ``$WORKFLOW_REPO_ABS`` in the environment.
+    prompt = f"""In the repository {pr.repo_url} (repo folder: repos/{pr.repo_name}):
 
 **Pull Request #{pr.pr_number}: {pr.pr_title}**
 
@@ -140,18 +152,17 @@ Head SHA: {pr.head_sha}
 
 Please review this pull request:
 
-1. Clone the repo to ``/root/repos/{pr.repo_name}`` if missing: ``git clone {clone_url} /root/repos/{pr.repo_name}``
-2. ``cd /root/repos/{pr.repo_name}``. Before any ``git fetch``/``git pull``, run ``git remote set-url origin {clone_url}`` so the remote always carries the app token (avoids hangs on credential prompts).
-3. Check out the PR branch (use ``execute`` with a timeout, e.g. 300s): ``git fetch origin {pr.head_branch} && git checkout {pr.head_branch}`` (or equivalent).
-4. Compare the changes with the base branch: ``git diff {pr.base_branch}...{pr.head_branch}``
+1. Clone the repo to repos/{pr.repo_name} if it doesn't exist (use: git clone {clone_url} repos/{pr.repo_name})
+2. Checkout the PR branch: git checkout {pr.head_branch} (or git fetch origin {pr.head_branch} && git checkout {pr.head_branch})
+3. Compare the changes with the base branch: git diff {pr.base_branch}...{pr.head_branch}
 
-5. Review the code changes for:
+4. Review the code changes for:
    - Code quality and best practices
    - Potential bugs or issues
    - Security concerns
    - Performance implications
 
-6. Add inline review comments on specific lines using the `add_inline_review_comment` tool:
+5. Add inline review comments on specific lines using the `add_inline_review_comment` tool:
    - For suggestions on specific code blocks, use the tool to comment directly on those lines, with suggestions inside ```suggestions ... ``` block, this will give the user an option to commit the suggestion directly.
    - For multi-line suggestions, specify both start_line and line parameters
    - Use clear, constructive language in your comments
@@ -159,7 +170,7 @@ Please review this pull request:
      * Single line: add_inline_review_comment(path="src/utils.ts", line=42, body="Consider using const instead of let")
      * Multi-line: add_inline_review_comment(path="src/api.ts", line=50, start_line=45, body="This block could be refactored")
 
-7. After adding inline comments, post a summary comment using:
+6. After adding inline comments, post a summary comment using:
    gh pr comment {pr.pr_number} --body "## Review Summary
 
    I've reviewed the changes and added inline comments on specific lines.
@@ -170,7 +181,7 @@ Please review this pull request:
    **Overall Assessment:**
    [Your verdict]"
 
-8. Finally, submit your review:
+7. Finally, submit your review:
    - If everything looks good: gh pr review {pr.pr_number} --approve --body "LGTM! See inline comments for minor suggestions."
    - If changes needed: gh pr review {pr.pr_number} --request-changes --body "Please address the inline comments."
    - If just commenting: gh pr review {pr.pr_number} --comment --body "See inline comments for feedback."

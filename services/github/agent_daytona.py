@@ -3,10 +3,15 @@ Daytona sandbox lifecycle for GitHub deep agents (issue + PR workflows).
 
 See LangChain Deep Agents sandboxes:
 https://docs.langchain.com/oss/python/deepagents/sandboxes#daytona
+
+Uses Daytona's **stock Python** snapshot (``language=python``) so ``python3`` is available for
+Deep Agents file tools (``BaseSandbox``). The GitHub CLI is **not** in that image; we install
+``gh`` into ``<home>/bin`` right after the sandbox is created.
 """
 
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 
 from daytona import (
@@ -17,12 +22,15 @@ from daytona import (
 )
 from langchain_daytona import DaytonaSandbox
 
-from constants import (
-    daytona_sandbox_snapshot,
-)
+from constants import DAYTONA_INSTALL_GH_CLI, GITHUB_CLI_VERSION, daytona_sandbox_home
 from logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _daytona_path(sandbox_home: str) -> str:
+    """Ensure ``~/bin`` (for bundled ``gh``) is first on ``PATH``."""
+    return f"{sandbox_home}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 
 def build_sandbox_env_vars(
@@ -31,27 +39,21 @@ def build_sandbox_env_vars(
     git_author: tuple[str, str] | None,
     git_committer: tuple[str, str] | None,
     repo_name: str,
+    sandbox_home: str | None = None,
 ) -> dict[str, str]:
     """
     Environment inside the sandbox for ``git`` / ``gh``.
 
-    ``WORKFLOW_REPO_ABS`` must match where the agent clones (``/root/repos/...``) so it
-    aligns with Deep Agents file tools, which resolve paths from the real filesystem root
-    (``read_file`` turns ``repos/x`` into ``/repos/x``, which is wrong if the clone lives
-    under ``$HOME``).
+    Sets ``WORKFLOW_REPO_ABS`` / ``WORKFLOW_REPO_REL`` so the model can resolve the clone
+    location without guessing ``/repo`` vs ``/home/...``.
     """
+    home = sandbox_home or daytona_sandbox_home()
     rel = f"repos/{repo_name}"
-    repo_root = f"/root/{rel}"
     env: dict[str, str] = {
         "GH_TOKEN": gh_token,
-        "GITHUB_TOKEN": gh_token,
-        "HOME": "/root",
-        "PWD": "/root",
-        "PATH": "/root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "PATH": _daytona_path(home),
         "WORKFLOW_REPO_REL": rel,
-        "WORKFLOW_REPO_ABS": repo_root,
-        "GIT_TERMINAL_PROMPT": "0",
-        "GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
+        "WORKFLOW_REPO_ABS": f"{home}/{rel}",
     }
     if git_author:
         an, ae = git_author
@@ -61,6 +63,68 @@ def build_sandbox_env_vars(
         env["GIT_COMMITTER_NAME"] = cn
         env["GIT_COMMITTER_EMAIL"] = ce
     return env
+
+
+def ensure_github_cli_installed(
+    sandbox: DaytonaSandboxHandle,
+    *,
+    sandbox_home: str | None = None,
+) -> None:
+    """
+    Install the ``gh`` binary into ``<sandbox_home>/bin`` when missing.
+
+    Default is **off** (custom GHCR images ship ``gh``). Set ``DAYTONA_INSTALL_GH_CLI=true``
+    for Daytona's stock snapshots that omit the GitHub CLI.
+    """
+    if DAYTONA_INSTALL_GH_CLI.strip().lower() in (
+        "0",
+        "false",
+        "no",
+        "off",
+    ):
+        return
+    home = sandbox_home or daytona_sandbox_home()
+    bin_dir = f"{home}/bin"
+    check = sandbox.process.exec(
+        "command -v gh >/dev/null 2>&1",
+        env={"PATH": _daytona_path(home)},
+        timeout=60,
+    )
+    if check.exit_code == 0:
+        return
+    ver = GITHUB_CLI_VERSION.strip() or "2.88.1"
+    script = f"""
+set -euo pipefail
+BIN={shlex.quote(bin_dir)}
+mkdir -p "$BIN"
+arch=$(uname -m)
+case "$arch" in
+  x86_64) arch=amd64 ;;
+  aarch64|arm64) arch=arm64 ;;
+  *) echo "unsupported arch: $arch" >&2; exit 1 ;;
+esac
+curl -fsSL "https://github.com/cli/cli/releases/download/v{ver}/gh_{ver}_linux_$arch.tar.gz" -o /tmp/gh.tgz
+tar -xzf /tmp/gh.tgz -C /tmp
+ROOT="/tmp/gh_{ver}_linux_$arch"
+cp "$ROOT/bin/gh" "$BIN/gh"
+chmod +x "$BIN/gh"
+rm -f /tmp/gh.tgz
+"$BIN/gh" version
+"""
+    try:
+        r = sandbox.process.exec(script.strip(), timeout=180)
+        if r.exit_code != 0:
+            logger.warning(
+                "Could not install GitHub CLI in sandbox (exit=%s): %s",
+                r.exit_code,
+                (r.result or "")[:500],
+            )
+        else:
+            logger.info("GitHub CLI (gh) installed in sandbox at %s/gh", bin_dir)
+    except Exception:
+        logger.exception(
+            "GitHub CLI install failed; agent may fall back to curl for GitHub API"
+        )
 
 
 @dataclass
@@ -75,6 +139,7 @@ def create_daytona_agent_session(
     run_id: str,
     env_vars: dict[str, str],
     *,
+    sandbox_home: str | None = None,
     create_timeout_sec: float = 120,
 ) -> tuple[DaytonaSandbox, DaytonaAgentSession]:
     """
@@ -83,18 +148,18 @@ def create_daytona_agent_session(
     ``ephemeral=True`` maps to immediate removal once the sandbox is stopped (see Daytona
     ``CreateSandboxBaseParams``). Always call :func:`stop_sandbox` after the agent run.
 
-    Snapshot selection: set ``DAYTONA_SNAPSHOT`` to a Daytona-registered snapshot name
-    (e.g. minimal git+gh GHCR image). Otherwise uses Daytona's stock snapshot for
+    Uses the TypeScript default snapshot so Node/npm/git tooling matches agent prompts.
     """
     client = Daytona()
-    snap = daytona_sandbox_snapshot()
+    home = sandbox_home or daytona_sandbox_home()
     params = CreateSandboxFromSnapshotParams(
-        snapshot=snap,
+        language="typescript",
         env_vars=env_vars,
         labels={"run_id": run_id, "app": "greagent-github-deep-agent"},
         ephemeral=True,
     )
     sandbox = client.create(params, timeout=create_timeout_sec)
+    ensure_github_cli_installed(sandbox, sandbox_home=home)
     backend = DaytonaSandbox(sandbox=sandbox, timeout=30 * 60)
     return backend, DaytonaAgentSession(daytona=client, sandbox=sandbox)
 

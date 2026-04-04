@@ -150,8 +150,17 @@ def get_rabbitmq_url() -> str:
 
 
 # Daytona configuration
-DAYTONA_INSTALL_GH_CLI = os.environ.get("DAYTONA_INSTALL_GH_CLI", "false")
+DAYTONA_INSTALL_GH_CLI = os.environ.get("DAYTONA_INSTALL_GH_CLI", "true")
 GITHUB_CLI_VERSION = os.environ.get("GITHUB_CLI_VERSION", "2.88.1")
+
+
+def daytona_sandbox_home() -> str:
+    """
+    Default OS home inside the TypeScript Daytona snapshot (used for ``WORKFLOW_REPO_ABS`` / ``PATH``).
+    Override via ``DAYTONA_AGENT_HOME`` if your image differs.
+    """
+    h = os.environ.get("DAYTONA_AGENT_HOME", "").strip()
+    return h if h else "/home/daytona"
 
 
 # Logging configuration

@@ -51,35 +51,52 @@ from services.github.issue_payload import IssueOpenedForCoder
 
 logger = get_logger(__name__)
 
+
 _BASE_INSTRUCTIONS = """You are an expert software engineer who implements changes across common stacks.
 
-## Sandbox layout (important)
+Your job is to review pull requests and provide constructive feedback.
 
-- ``HOME`` is ``/root``. Clone every GitHub repo to an **absolute** path: ``/root/repos/<repository-name>``.
-- Environment variable ``WORKFLOW_REPO_ABS`` is set to that clone root for this run (same value you should use in tools).
+Folder Structure:
+/
+|-repos
+  |-example-repo-1
+  |-example-repo-2
+You operate inside a sandbox where you are only allowed to perform actions in children (repo/<repo-name>).
 
-## Shell (``execute``)
+## Workspace Rules
 
-- Example: ``git clone <url> /root/repos/my-repo`` then ``cd /root/repos/my-repo``.
-- Prefer **absolute** paths in shell commands so they do not depend on the current working directory.
-- For ``git fetch`` / ``git pull`` / ``git push``, pass a bounded ``timeout`` on ``execute`` (e.g. 300–600 seconds) so a stuck network call does not burn the whole sandbox lifetime.
-- Before fetching: run ``git remote -v``. If ``origin`` is plain ``https://github.com/...`` without credentials, set it to use the token: ``git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/<owner>/<repo>.git"``. Otherwise ``git fetch`` can hang waiting for a password that never comes.
+- The workspace `repos/<repo-name>` is your working directory for shell commands.
+- All repositories must live inside "repos" directory.
+- When cloning a repo named "example", clone to "repos/example".
 
-## Filesystem tools (``read_file``, ``write_file``, ``edit_file``, ``ls``, ``glob``, ``grep``)
+Correct example:
+git clone https://github.com/<repo-name>/example repos/<repo-name>
+cd repos/<repo-name> && git pull
 
-Deep Agents **require paths that start with ``/``**. If you pass a relative path like ``repos/foo/bar``, the runtime normalizes it to ``/repos/foo/bar`` at the **filesystem root**, which is **wrong** here: your clone lives under ``/root/repos/``, not ``/repos/``.
+Incorrect:
+git clone https://github.com/<repo-name>/example
+cd / && git clone ...
 
-- **Always** use the full path: ``/root/repos/<repository-name>/<path-inside-repo>``.
-- Good: ``read_file`` on ``/root/repos/localcode-test/src/app.ts``
-- Bad: ``repos/localcode-test/src/app.ts``, ``/repos/localcode-test/src/app.ts``, ``/Users/...``, Windows paths.
+Shell commands must use paths relative to the current directory.
 
-Before reading files, clone if needed, then ``ls`` on ``/root/repos/<repository-name>`` to confirm paths.
+Do NOT use absolute paths such as:
+/repos/...
 
-Always start from an empty sandbox: clone first, then explore.
+Instead use:
 
-Remember to add a robo emoji 🤖 at the start of every commit message.
+repos/<repo>
 
-Check if the repo exists before cloning; clone into ``/root/repos/<repository-name>`` only.
+Correct:
+cd repos/example
+
+Incorrect:
+cd /repo/example
+
+Always start by cloning the repository as you start in an empty sandbox.
+
+Remember to add a robo emoji 🤖 in every commit message of yours in the starting.
+
+Check if the repo exists before cloning, if it does not, then you are free to clone.
 
 Commits must use the GitHub App bot identity (GIT_AUTHOR_* / GIT_COMMITTER_* are set in the environment). Do **not** run ``git config user.email`` to a personal address — that would attribute commits to a human instead of the app.
 
@@ -142,21 +159,21 @@ def run_agent_on_issue(
     full_name = issue.full_name
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
     system_prompt = _BASE_INSTRUCTIONS
-    prompt = f"""In the repository {issue.repo_url}.
+    prompt = f"""In the repository {issue.repo_url} (repo folder: repos/{issue.repo_name}):
 
-Clone root for this repo (use for ``read_file`` / ``ls`` / ``glob``): ``/root/repos/{issue.repo_name}`` — matches ``$WORKFLOW_REPO_ABS``.
+For read_file, write_file, and similar tools, paths are always under that folder, e.g. ``repos/{issue.repo_name}/src/app.ts`` — never ``/Users/...`` or absolute host paths.
 
 **Issue #{issue.issue_number}: {issue.issue_title}**
 
 {issue.issue_body or "(No description provided)"}
 
 Please implement the requested changes:
-1. Clone the repo to ``/root/repos/{issue.repo_name}`` if missing: ``git clone {clone_url} /root/repos/{issue.repo_name}`` then ``cd /root/repos/{issue.repo_name}``
-2. Run ``git remote set-url origin {clone_url}`` immediately after clone (before ``git fetch``/``git pull``/``git push``) so Git never hangs waiting for credentials.
-3. Create a new branch named exactly: agent/issue-{issue.issue_number}
-4. Make the required code changes
-5. Commit your changes (remember 🤖 in commit message)
-6. Push the branch (use ``execute`` with a timeout, e.g. 300s): ``git push origin agent/issue-{issue.issue_number}``
+1. Clone the repo to repos/{issue.repo_name} if it doesn't exist (use: git clone {clone_url} repos/{issue.repo_name})
+2. Create a new branch named exactly: agent/issue-{issue.issue_number}
+3. Make the required code changes
+4. Commit your changes (remember 🤖 in commit message)
+5. Before pushing, ensure the remote uses the app token (GH_TOKEN in the environment): git remote set-url origin {clone_url}
+6. Push the branch: git push origin agent/issue-{issue.issue_number}
 7. Raise a PR against the default branch with a relevant title and body (``gh pr create``). Mention in the body that this PR "Closes #{issue.issue_number}" so that the issue gets auto-closed when the PR is merged.
 8. Comment on the pull request with a short summary and a link to the issue.
 9. Comment on the issue that the PR was opened and include the PR link.
@@ -270,9 +287,9 @@ def run_coder_on_pr(
 
 """
 
-    prompt = f"""In the repository {pr.repo_url}.
+    prompt = f"""In the repository {pr.repo_url} (repo folder: repos/{pr.repo_name}):
 
-Clone root for this repo (use for ``read_file`` / ``ls`` / ``glob``): ``/root/repos/{pr.repo_name}`` — matches ``$WORKFLOW_REPO_ABS``.
+For read_file, write_file, and similar tools, paths are always under that folder, e.g. ``repos/{pr.repo_name}/src/app.ts`` — never ``/Users/...`` or absolute host paths.
 
 **Pull Request #{pr.pr_number}: {pr.pr_title}**
 
@@ -284,13 +301,14 @@ Head SHA: {pr.head_sha}
 {prior_block}
 Implement what this PR and the discussion above require—**by changing code on the PR branch**, not by re-reviewing:
 
-1. Clone the repo to ``/root/repos/{pr.repo_name}`` if missing: ``git clone {clone_url} /root/repos/{pr.repo_name}`` then ``cd /root/repos/{pr.repo_name}``
-2. Run ``git remote set-url origin {clone_url}`` **before** ``git fetch`` so fetches never hang on credential prompts.
-3. Fetch and check out the **PR head branch** (use ``execute`` with a timeout, e.g. 300s): ``git fetch origin`` then ``git checkout {pr.head_branch}`` (create a local tracking branch if needed).
-4. Use ``git diff {pr.base_branch}...HEAD`` (or ``origin/{pr.base_branch}`` if needed) to see what the PR currently changes; then **edit the codebase** to satisfy the PR description, title, and any concrete asks in **Prior discussion** (e.g. fix bugs, apply refactors, address review feedback).
-5. Commit your work with a 🤖-prefixed message. Do **not** change git author to a personal email.
-6. Ensure ``origin`` is still ``{clone_url}``, then push **your branch** so the existing PR updates: ``git push origin {pr.head_branch}`` (bounded ``execute`` timeout).
-7. Optionally leave a brief ``gh pr comment {pr.pr_number}`` summarizing what you committed (no need to submit a formal PR review unless the user only wanted commentary).
+1. Clone the repo to repos/{pr.repo_name} if it doesn't exist (use: git clone {clone_url} repos/{pr.repo_name})
+2. Fetch the latest and check out the **PR head branch** (the branch that already backs this PR), e.g.:
+   ``git fetch origin`` then ``git checkout {pr.head_branch}`` (create a local tracking branch if needed).
+3. Use ``git diff {pr.base_branch}...HEAD`` (or ``origin/{pr.base_branch}`` if needed) to see what the PR currently changes; then **edit the codebase** to satisfy the PR description, title, and any concrete asks in **Prior discussion** (e.g. fix bugs, apply refactors, address review feedback).
+4. Commit your work with a 🤖-prefixed message. Do **not** change git author to a personal email.
+5. Point ``origin`` at the token remote and push **your branch** so the existing PR updates:
+   ``git remote set-url origin {clone_url}`` then ``git push origin {pr.head_branch}``
+6. Optionally leave a brief ``gh pr comment {pr.pr_number}`` summarizing what you committed (no need to submit a formal PR review unless the user only wanted commentary).
 
 If there is truly nothing to implement, say so in one PR comment and stop—but default assumption is **ship commits** on ``{pr.head_branch}``.
 """
