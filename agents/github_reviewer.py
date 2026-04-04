@@ -59,12 +59,12 @@ If "repos" does not exist yet, create it first (e.g. mkdir -p repos).
 - All repositories must live inside "repos" directory.
 - When cloning a repo named "example", clone to "repos/example".
 
-Correct example:
-git clone https://github.com/user/example repos/example
+Correct example (use a real org from the task, never the literal word "user" as org — that invites bogus ``/Users/user/...`` paths):
+git clone https://github.com/acme-corp/example repos/example
 cd repos/example && git pull
 
 Incorrect:
-git clone https://github.com/user/example
+git clone https://github.com/acme-corp/example
 cd / && git clone ...
 
 Shell commands must use paths relative to the current directory.
@@ -81,6 +81,9 @@ cd repos/example
 
 Incorrect:
 cd /repo/example
+
+- Tool paths must be **relative to the workspace root** (same as the shell working directory): ``repos/<repo-folder>/<path-inside-repo>``.
+- Example: if the task says the repo folder is ``repos/localcode-test``, read ``repos/localcode-test/src/app.ts`` — **never** ``/Users/user/repos/localcode-test/src/app.ts``.
 
 Always start by cloning the repository as you start in an empty sandbox.
 
@@ -142,6 +145,8 @@ def run_agent_on_pr(
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
     system_prompt = _BASE_INSTRUCTIONS
     prompt = f"""In the repository {pr.repo_url} (repo folder: repos/{pr.repo_name}):
+
+For read_file, write_file, and similar tools, paths are always under that folder, e.g. ``repos/{pr.repo_name}/src/app.ts`` — never ``/Users/...`` or absolute host paths.
 
 **Pull Request #{pr.pr_number}: {pr.pr_title}**
 
