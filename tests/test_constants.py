@@ -11,7 +11,6 @@ from constants import (
     DEFAULT_DAYTONA_SNAPSHOT,
     OLLAMA_API_KEY,
     OLLAMA_BASE_URL,
-    daytona_sandbox_enabled,
     daytona_sandbox_home,
     daytona_sandbox_language_explicit,
     daytona_sandbox_language_or_default,
@@ -72,24 +71,6 @@ class TestConstants:
         with patch.dict(os.environ, {"DATABASE_URL": test_url}, clear=True):
             url = get_database_url()
             assert url == test_url
-
-    def test_daytona_sandbox_enabled_no_key(self):
-        """Test Daytona disabled when no API key."""
-        with patch.dict(os.environ, {}, clear=True):
-            assert daytona_sandbox_enabled() is False
-
-    def test_daytona_sandbox_enabled_with_key(self):
-        """Test Daytona enabled with API key."""
-        with patch.dict(os.environ, {"DAYTONA_API_KEY": "test_key"}, clear=True):
-            assert daytona_sandbox_enabled() is True
-
-    def test_daytona_sandbox_enabled_agent_flag_disabled(self):
-        with patch.dict(
-            os.environ,
-            {"DAYTONA_API_KEY": "test_key", "DAYTONA_AGENT_ENABLED": "false"},
-            clear=True,
-        ):
-            assert daytona_sandbox_enabled() is False
 
     def test_daytona_sandbox_user_default(self):
         with patch.dict(os.environ, {}, clear=True):

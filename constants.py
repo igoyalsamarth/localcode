@@ -107,22 +107,6 @@ GIT_COMMITTER_NAME = os.environ.get("GIT_COMMITTER_NAME", "").strip()
 GIT_COMMITTER_EMAIL = os.environ.get("GIT_COMMITTER_EMAIL", "").strip()
 
 
-def daytona_sandbox_enabled() -> bool:
-    """
-    Use Daytona remote sandbox when ``DAYTONA_API_KEY`` is set.
-    Set ``DAYTONA_AGENT_ENABLED=false`` to force the local ``LocalShellBackend`` even
-    if a key exists.
-    """
-    if os.environ.get("DAYTONA_AGENT_ENABLED", "").strip().lower() in (
-        "0",
-        "false",
-        "no",
-        "off",
-    ):
-        return False
-    return bool(os.environ.get("DAYTONA_API_KEY", "").strip())
-
-
 def daytona_sandbox_user() -> str:
     """
     Linux user in the custom GHCR sandbox image (default ``greagents``), aligned with the
@@ -235,6 +219,7 @@ def get_rabbitmq_url() -> str:
 # Daytona configuration
 DAYTONA_INSTALL_GH_CLI = os.environ.get("DAYTONA_INSTALL_GH_CLI", "false")
 GITHUB_CLI_VERSION = os.environ.get("GITHUB_CLI_VERSION", "2.88.1")
+
 
 # Logging configuration
 def get_log_level() -> str:

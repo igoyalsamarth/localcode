@@ -14,10 +14,8 @@ otherwise the local ``LocalShellBackend`` virtual filesystem under ``./workspace
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from deepagents import create_deep_agent
-from deepagents.backends import LocalShellBackend
 
 from agents.deep_agent_stream import stream_deep_agent
 from agents.github_llm import get_github_deep_agent_llm
@@ -25,7 +23,6 @@ from agents.reviewer_tools import add_inline_review_comment
 from agents.usage_callback import AgentLlmUsageCallbackHandler
 from constants import (
     AGENT_LLM_PROVIDER,
-    daytona_sandbox_enabled,
     daytona_sandbox_home,
     git_identity_from_env,
 )
@@ -40,7 +37,6 @@ from services.github.workflow_usage import record_pr_workflow_usage
 from services.github.installation_token import (
     get_installation_token_for_repo,
     github_bot_git_identity,
-    installation_token_env,
 )
 from services.github.pr_payload import PROpenedForReview
 
@@ -91,34 +87,6 @@ Always start by cloning the repository as you start in an empty sandbox.
 
 For GitHub operations, prefer the ``gh`` CLI (``gh pr review``, ``gh pr comment``, …) with ``GH_TOKEN`` in the environment; it is more reliable than raw ``curl``.
 """
-
-
-def build_reviewer_system_prompt(
-    *,
-    daytona: bool,
-    repo_name: str,
-    workflow_repo_abs: str | None,
-    sandbox_home: str | None = None,
-) -> str:
-    """Augment base instructions with backend-specific path hints (Daytona vs local VFS)."""
-    if not daytona:
-        return _BASE_INSTRUCTIONS
-    home = sandbox_home or daytona_sandbox_home()
-    abs_hint = workflow_repo_abs or ""
-    return (
-        _BASE_INSTRUCTIONS
-        + f"""
-
-## Daytona sandbox (this run)
-
-- After clone, this repository's files are under **{abs_hint}** (also in ``$WORKFLOW_REPO_ABS``).
-- For ``read_file`` / ``write_file`` / ``edit_file``, use that **absolute** path prefix — do not invent roots like ``/repo/`` or top-level ``/repos/`` (those are wrong).
-- For **shell** commands (``ls``, ``grep``, ``find``, ``cd``), ignore the generic “no absolute paths” rule above: either ``cd "$WORKFLOW_REPO_ABS"`` and use **relative** paths inside the repo, or stay in ``$HOME`` and use ``repos/{repo_name}/...``. Avoid hand-typing ``/home/...`` (may not match ``$HOME``).
-- Under that prefix, **do not guess** paths (e.g. ``src/app.ts``, ``main.py``); list or search the tree first, then open only paths that exist.
-- Shell ``pwd`` is usually your home (e.g. ``{home}``); ``repos/{repo_name}`` is relative to that home.
-- If unsure, run ``printenv WORKFLOW_REPO_ABS`` once instead of searching the filesystem.
-"""
-    )
 
 
 def create_github_reviewer_agent(backend: object, *, system_prompt: str) -> object:
@@ -173,15 +141,8 @@ def run_agent_on_pr(
 
     full_name = pr.full_name
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
-    use_daytona = daytona_sandbox_enabled()
     sandbox_home = daytona_sandbox_home()
-    workflow_repo_abs = f"{sandbox_home}/repos/{pr.repo_name}"
-    system_prompt = build_reviewer_system_prompt(
-        daytona=use_daytona,
-        repo_name=pr.repo_name,
-        workflow_repo_abs=workflow_repo_abs if use_daytona else None,
-        sandbox_home=sandbox_home,
-    )
+    system_prompt = _BASE_INSTRUCTIONS
     prompt = f"""In the repository {pr.repo_url} (repo folder: repos/{pr.repo_name}):
 
 **Pull Request #{pr.pr_number}: {pr.pr_title}**
@@ -205,7 +166,7 @@ Please review this pull request:
    - Performance implications
 
 5. Add inline review comments on specific lines using the `add_inline_review_comment` tool:
-   - For suggestions on specific code blocks, use the tool to comment directly on those lines
+   - For suggestions on specific code blocks, use the tool to comment directly on those lines, with suggestions inside ```suggestions ... ``` block.
    - For multi-line suggestions, specify both start_line and line parameters
    - Use clear, constructive language in your comments
    - Examples:
@@ -247,62 +208,37 @@ Remember: Use inline comments for specific code feedback, and the summary commen
 
     # LangChain tools run in this worker process. Daytona only puts GH_TOKEN in the
     # sandbox env, so without this the inline review tool sees no token on the host.
-    _previous_gh_token = os.environ.get("GH_TOKEN")
     os.environ["GH_TOKEN"] = token_value
 
     daytona_session = None
     try:
-        if use_daytona:
-            logger.info(
-                "GitHub reviewer using Daytona sandbox (run_id=%s)",
-                run_id,
-            )
-            env_vars = build_sandbox_env_vars(
-                token_value,
-                git_author=git_author_pair,
-                git_committer=git_committer_pair,
-                repo_name=pr.repo_name,
-                sandbox_home=sandbox_home,
-            )
-            env_vars.update(
-                {
-                    "GITHUB_PR_OWNER": pr.owner,
-                    "GITHUB_PR_REPO": pr.repo_name,
-                    "GITHUB_PR_NUMBER": str(pr.pr_number),
-                    "GITHUB_PR_HEAD_SHA": pr.head_sha,
-                }
-            )
-            backend, session = create_daytona_agent_session(
-                run_id, env_vars, sandbox_home=sandbox_home
-            )
-            daytona_session = session
-            agent = create_github_reviewer_agent(backend, system_prompt=system_prompt)
-            stream_deep_agent(agent, prompt, stream_config)
-        else:
-            logger.info(
-                "GitHub reviewer using local LocalShellBackend under ./workspace "
-                "(set DAYTONA_API_KEY to use Daytona)",
-            )
-            Path("workspace/repos").mkdir(parents=True, exist_ok=True)
-            with installation_token_env(
-                token_value,
-                git_author=git_author_pair,
-                git_committer=git_committer_pair,
-            ):
-                backend = LocalShellBackend(
-                    root_dir="./workspace",
-                    virtual_mode=True,
-                    inherit_env=True,
-                )
-                agent = create_github_reviewer_agent(
-                    backend, system_prompt=system_prompt
-                )
-                stream_deep_agent(agent, prompt, stream_config)
+        logger.info(
+            "GitHub reviewer using Daytona sandbox (run_id=%s)",
+            run_id,
+        )
+        env_vars = build_sandbox_env_vars(
+            token_value,
+            git_author=git_author_pair,
+            git_committer=git_committer_pair,
+            repo_name=pr.repo_name,
+            sandbox_home=sandbox_home,
+        )
+        env_vars.update(
+            {
+                "GITHUB_PR_OWNER": pr.owner,
+                "GITHUB_PR_REPO": pr.repo_name,
+                "GITHUB_PR_NUMBER": str(pr.pr_number),
+                "GITHUB_PR_HEAD_SHA": pr.head_sha,
+            }
+        )
+        backend, session = create_daytona_agent_session(
+            run_id, env_vars, sandbox_home=sandbox_home
+        )
+        daytona_session = session
+        agent = create_github_reviewer_agent(backend, system_prompt=system_prompt)
+        stream_deep_agent(agent, prompt, stream_config)
+
     finally:
-        if _previous_gh_token is None:
-            os.environ.pop("GH_TOKEN", None)
-        else:
-            os.environ["GH_TOKEN"] = _previous_gh_token
         llm.callbacks = None
         stop_sandbox(daytona_session)
         record_pr_workflow_usage(

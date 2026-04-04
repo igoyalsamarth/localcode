@@ -14,17 +14,14 @@ otherwise the local ``LocalShellBackend`` virtual filesystem under ``./workspace
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from deepagents import create_deep_agent
-from deepagents.backends import LocalShellBackend
 
 from agents.deep_agent_stream import stream_deep_agent
 from agents.github_llm import get_github_deep_agent_llm
 from agents.usage_callback import AgentLlmUsageCallbackHandler
 from constants import (
     AGENT_LLM_PROVIDER,
-    daytona_sandbox_enabled,
     daytona_sandbox_home,
     git_identity_from_env,
 )
@@ -107,39 +104,10 @@ For pull requests and GitHub comments, prefer the ``gh`` CLI (``gh pr create``, 
 """
 
 
-def build_coder_system_prompt(
-    *,
-    daytona: bool,
-    repo_name: str,
-    workflow_repo_abs: str | None,
-    sandbox_home: str | None = None,
-) -> str:
-    """Augment base instructions with backend-specific path hints (Daytona vs local VFS)."""
-    if not daytona:
-        return _BASE_INSTRUCTIONS
-    home = sandbox_home or daytona_sandbox_home()
-    abs_hint = workflow_repo_abs or ""
-    return (
-        _BASE_INSTRUCTIONS
-        + f"""
-
-## Daytona sandbox (this run)
-
-- After clone, this repository’s files are under **{abs_hint}** (also in ``$WORKFLOW_REPO_ABS``).
-- For ``read_file`` / ``write_file`` / ``edit_file``, use that **absolute** path prefix — do not invent roots like ``/repo/`` or top-level ``/repos/`` (those are wrong).
-- For **shell** commands (``ls``, ``grep``, ``find``, ``cd``), ignore the generic “no absolute paths” rule above: either ``cd "$WORKFLOW_REPO_ABS"`` and use **relative** paths inside the repo, or stay in ``$HOME`` and use ``repos/{repo_name}/...``. Avoid hand-typing ``/home/...`` (may not match ``$HOME``).
-- Under that prefix, **do not guess** paths (e.g. ``src/app.ts``, ``main.py``); list or search the tree first, then open only paths that exist.
-- Shell ``pwd`` is usually your home (e.g. ``{home}``); ``repos/{repo_name}`` is relative to that home.
-- If unsure, run ``printenv WORKFLOW_REPO_ABS`` once instead of searching the filesystem.
-"""
-    )
-
-
 def create_github_coder_agent(
     backend: object,
     *,
     system_prompt: str,
-    tools: list | None = None,
 ) -> object:
     """
     Build the deep agent graph for the given backend (local virtual FS or Daytona sandbox).
@@ -151,7 +119,6 @@ def create_github_coder_agent(
         model=get_github_deep_agent_llm(),
         system_prompt=system_prompt,
         backend=backend,
-        tools=tools or [],
     )
 
 
@@ -191,15 +158,8 @@ def run_agent_on_issue(
 
     full_name = issue.full_name
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
-    use_daytona = daytona_sandbox_enabled()
     sandbox_home = daytona_sandbox_home()
-    workflow_repo_abs = f"{sandbox_home}/repos/{issue.repo_name}"
-    system_prompt = build_coder_system_prompt(
-        daytona=use_daytona,
-        repo_name=issue.repo_name,
-        workflow_repo_abs=workflow_repo_abs if use_daytona else None,
-        sandbox_home=sandbox_home,
-    )
+    system_prompt = _BASE_INSTRUCTIONS
     prompt = f"""In the repository {issue.repo_url} (repo folder: repos/{issue.repo_name}):
 
 **Issue #{issue.issue_number}: {issue.issue_title}**
@@ -229,42 +189,23 @@ Please implement the requested changes:
 
     daytona_session = None
     try:
-        if use_daytona:
-            logger.info(
-                "GitHub coder using Daytona sandbox (run_id=%s)",
-                run_id,
-            )
-            env_vars = build_sandbox_env_vars(
-                token_value,
-                git_author=git_author_pair,
-                git_committer=git_committer_pair,
-                repo_name=issue.repo_name,
-                sandbox_home=sandbox_home,
-            )
-            backend, session = create_daytona_agent_session(
-                run_id, env_vars, sandbox_home=sandbox_home
-            )
-            daytona_session = session
-            agent = create_github_coder_agent(backend, system_prompt=system_prompt)
-            stream_deep_agent(agent, prompt, stream_config)
-        else:
-            logger.info(
-                "GitHub coder using local LocalShellBackend under ./workspace "
-                "(set DAYTONA_API_KEY to use Daytona)",
-            )
-            Path("workspace/repos").mkdir(parents=True, exist_ok=True)
-            with installation_token_env(
-                token_value,
-                git_author=git_author_pair,
-                git_committer=git_committer_pair,
-            ):
-                backend = LocalShellBackend(
-                    root_dir="./workspace",
-                    virtual_mode=True,
-                    inherit_env=True,
-                )
-                agent = create_github_coder_agent(backend, system_prompt=system_prompt)
-                stream_deep_agent(agent, prompt, stream_config)
+        logger.info(
+            "GitHub coder using Daytona sandbox (run_id=%s)",
+            run_id,
+        )
+        env_vars = build_sandbox_env_vars(
+            token_value,
+            git_author=git_author_pair,
+            git_committer=git_committer_pair,
+            repo_name=issue.repo_name,
+            sandbox_home=sandbox_home,
+        )
+        backend, session = create_daytona_agent_session(
+            run_id, env_vars, sandbox_home=sandbox_home
+        )
+        daytona_session = session
+        agent = create_github_coder_agent(backend, system_prompt=system_prompt)
+        stream_deep_agent(agent, prompt, stream_config)
     finally:
         llm.callbacks = None
         stop_sandbox(daytona_session)
@@ -330,18 +271,8 @@ def run_coder_on_pr(
 
     full_name = pr.full_name
     clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
-    use_daytona = daytona_sandbox_enabled()
     sandbox_home = daytona_sandbox_home()
-    workflow_repo_abs = f"{sandbox_home}/repos/{pr.repo_name}"
-    system_prompt = (
-        build_coder_system_prompt(
-            daytona=use_daytona,
-            repo_name=pr.repo_name,
-            workflow_repo_abs=workflow_repo_abs if use_daytona else None,
-            sandbox_home=sandbox_home,
-        )
-        + _PR_CODER_SYSTEM_SUFFIX
-    )
+    system_prompt = _BASE_INSTRUCTIONS + _PR_CODER_SYSTEM_SUFFIX
 
     prior_discussion = fetch_pr_conversation_context_for_llm(
         pr.owner,
@@ -391,52 +322,28 @@ If there is truly nothing to implement, say so in one PR comment and stop—but 
         "callbacks": [usage_cb],
     }
 
-    _previous_gh_token = os.environ.get("GH_TOKEN")
     os.environ["GH_TOKEN"] = token_value
 
     daytona_session = None
     try:
-        if use_daytona:
-            logger.info(
-                "GitHub PR coder using Daytona sandbox (run_id=%s)",
-                run_id,
-            )
-            env_vars = build_sandbox_env_vars(
-                token_value,
-                git_author=git_author_pair,
-                git_committer=git_committer_pair,
-                repo_name=pr.repo_name,
-                sandbox_home=sandbox_home,
-            )
-            backend, session = create_daytona_agent_session(
-                run_id, env_vars, sandbox_home=sandbox_home
-            )
-            daytona_session = session
-            agent = create_github_coder_agent(backend, system_prompt=system_prompt)
-            stream_deep_agent(agent, prompt, stream_config)
-        else:
-            logger.info(
-                "GitHub PR coder using local LocalShellBackend under ./workspace "
-                "(set DAYTONA_API_KEY to use Daytona)",
-            )
-            Path("workspace/repos").mkdir(parents=True, exist_ok=True)
-            with installation_token_env(
-                token_value,
-                git_author=git_author_pair,
-                git_committer=git_committer_pair,
-            ):
-                backend = LocalShellBackend(
-                    root_dir="./workspace",
-                    virtual_mode=True,
-                    inherit_env=True,
-                )
-                agent = create_github_coder_agent(backend, system_prompt=system_prompt)
-                stream_deep_agent(agent, prompt, stream_config)
+        logger.info(
+            "GitHub PR coder using Daytona sandbox (run_id=%s)",
+            run_id,
+        )
+        env_vars = build_sandbox_env_vars(
+            token_value,
+            git_author=git_author_pair,
+            git_committer=git_committer_pair,
+            repo_name=pr.repo_name,
+            sandbox_home=sandbox_home,
+        )
+        backend, session = create_daytona_agent_session(
+            run_id, env_vars, sandbox_home=sandbox_home
+        )
+        daytona_session = session
+        agent = create_github_coder_agent(backend, system_prompt=system_prompt)
+        stream_deep_agent(agent, prompt, stream_config)
     finally:
-        if _previous_gh_token is None:
-            os.environ.pop("GH_TOKEN", None)
-        else:
-            os.environ["GH_TOKEN"] = _previous_gh_token
         llm.callbacks = None
         stop_sandbox(daytona_session)
         record_github_workflow_usage(
