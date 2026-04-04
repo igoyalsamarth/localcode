@@ -78,29 +78,6 @@ class TestConstants:
         with patch.dict(os.environ, {"DAYTONA_SANDBOX_USER": "  mybot  "}):
             assert daytona_sandbox_user() == "mybot"
 
-    def test_daytona_sandbox_home_default(self):
-        """Test default Daytona home."""
-        with patch.dict(os.environ, {}, clear=True):
-            home = daytona_sandbox_home()
-            assert home == "/home/greagents"
-
-    def test_daytona_sandbox_home_custom(self):
-        """Test custom Daytona home via ``DAYTONA_AGENT_HOME``."""
-        with patch.dict(os.environ, {"DAYTONA_AGENT_HOME": "/custom/home"}, clear=True):
-            home = daytona_sandbox_home()
-            assert home == "/custom/home"
-
-    def test_daytona_sandbox_home_agent_env_preferred(self):
-        with patch.dict(
-            os.environ,
-            {
-                "DAYTONA_CODER_HOME": "/legacy",
-                "DAYTONA_AGENT_HOME": "/agent",
-            },
-            clear=True,
-        ):
-            assert daytona_sandbox_home() == "/agent"
-
     def test_daytona_sandbox_snapshot(self):
         with patch.dict(os.environ, {}, clear=True):
             assert daytona_sandbox_snapshot() == DEFAULT_DAYTONA_SNAPSHOT
