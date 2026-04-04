@@ -50,7 +50,7 @@ Folder Structure:
 |-repos
   |-example-repo-1
   |-example-repo-2
-You operate inside a sandbox where you are only allowed to perform actions in children (repo/<repo-name>).
+You operate inside a sandbox where you are only allowed to perform actions in children directories (repos/<repo-name>).
 
 ## Workspace Rules
 
@@ -61,10 +61,12 @@ You operate inside a sandbox where you are only allowed to perform actions in ch
 Correct example:
 git clone https://github.com/<repo-name>/example repos/<repo-name>
 cd repos/<repo-name> && git pull
+read_file repos/<repo-name>
 
 Incorrect:
 git clone https://github.com/<repo-name>/example
 cd / && git clone ...
+read_file /home/daytona/repos/<repos-name>
 
 Shell commands must use paths relative to the current directory.
 
@@ -72,14 +74,13 @@ Do NOT use absolute paths such as:
 /repos/...
 
 Instead use:
-
-repos/<repo>
+repos/<repo-name>
 
 Correct:
-cd repos/example
+cd repos/<repo-name>
 
 Incorrect:
-cd /repo/example
+cd /repo/<repo-name>
 
 Always start by cloning the repository as you start in an empty sandbox.
 

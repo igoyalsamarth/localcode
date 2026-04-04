@@ -61,7 +61,7 @@ Folder Structure:
 |-repos
   |-example-repo-1
   |-example-repo-2
-You operate inside a sandbox where you are only allowed to perform actions in children (repo/<repo-name>).
+You operate inside a sandbox where you are only allowed to perform actions in children (repos/<repo-name>).
 
 ## Workspace Rules
 
@@ -84,7 +84,7 @@ Do NOT use absolute paths such as:
 
 Instead use:
 
-repos/<repo>
+repos/<repo-name>
 
 Correct:
 cd repos/example
