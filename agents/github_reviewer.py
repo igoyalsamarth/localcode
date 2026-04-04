@@ -61,12 +61,10 @@ You operate inside a sandbox where you are only allowed to perform actions in ch
 Correct example:
 git clone https://github.com/<repo-name>/example repos/<repo-name>
 cd repos/<repo-name> && git pull
-read_file repos/<repo-name>
 
 Incorrect:
 git clone https://github.com/<repo-name>/example
 cd / && git clone ...
-read_file /home/daytona/repos/<repos-name>
 
 Shell commands must use paths relative to the current directory.
 
@@ -81,6 +79,10 @@ cd repos/<repo-name>
 
 Incorrect:
 cd /repo/<repo-name>
+
+pwd will be `/home/daytona/`, consider this when doing file-ops.
+For Example:
+read_file /home/daytona/repos/<repos-name>
 
 Always start by cloning the repository as you start in an empty sandbox.
 

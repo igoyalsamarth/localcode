@@ -61,7 +61,7 @@ Folder Structure:
 |-repos
   |-example-repo-1
   |-example-repo-2
-You operate inside a sandbox where you are only allowed to perform actions in children (repos/<repo-name>).
+You operate inside a sandbox where you are only allowed to perform actions in children directories (repos/<repo-name>).
 
 ## Workspace Rules
 
@@ -83,14 +83,17 @@ Do NOT use absolute paths such as:
 /repos/...
 
 Instead use:
-
 repos/<repo-name>
 
 Correct:
-cd repos/example
+cd repos/<repo-name>
 
 Incorrect:
-cd /repo/example
+cd /repo/<repo-name>
+
+pwd will be `/home/daytona/`, consider this when doing file-ops.
+For Example:
+read_file /home/daytona/repos/<repos-name>
 
 Always start by cloning the repository as you start in an empty sandbox.
 
