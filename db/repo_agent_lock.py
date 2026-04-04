@@ -26,11 +26,6 @@ def hold_github_repo_agent_lock(github_repo_id: int) -> Generator[None, None, No
     Block until this repository's agent lock is acquired, then hold it for the whole run.
 
     Uses a session-level ``pg_advisory_lock`` on PostgreSQL; no-op on other dialects.
-
-    The lock is held inside **one open transaction** on a dedicated connection (no
-    ``COMMIT`` until after ``yield``). That matches **PgBouncer transaction pooling**
-    (e.g. Supabase :6543): an intermediate commit would return the server to the pool and
-    release the advisory lock while workers still assume it is held.
     """
     engine = get_engine()
     if engine.dialect.name != "postgresql":
@@ -39,19 +34,18 @@ def hold_github_repo_agent_lock(github_repo_id: int) -> Generator[None, None, No
 
     key = github_repo_agent_lock_key(github_repo_id)
     conn = engine.connect()
-    trans = conn.begin()
     try:
         conn.execute(text("SELECT pg_advisory_lock(:k)"), {"k": key})
+        conn.commit()
         yield
     finally:
         try:
             conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": key})
-            trans.commit()
+            conn.commit()
         except Exception:
             logger.exception(
                 "Failed to release github repo agent lock (github_repo_id=%s)",
                 github_repo_id,
             )
-            trans.rollback()
         finally:
             conn.close()

@@ -29,11 +29,10 @@ class TestDatabaseInit:
         mock_engine = MagicMock()
         mock_engine.dialect.name = "postgresql"
         mock_conn = MagicMock()
-        mock_begin_cm = MagicMock()
-        mock_begin_cm.__enter__.return_value = None
-        mock_begin_cm.__exit__.return_value = None
-        mock_conn.begin.return_value = mock_begin_cm
-        mock_engine.connect.return_value = mock_conn
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = mock_conn
+        mock_cm.__exit__.return_value = None
+        mock_engine.connect.return_value = mock_cm
 
         with patch("db.get_engine", return_value=mock_engine):
             with patch.object(Base.metadata, "create_all") as mock_create_all:
@@ -50,11 +49,10 @@ class TestDatabaseInit:
         mock_engine = MagicMock()
         mock_engine.dialect.name = "postgresql"
         mock_conn = MagicMock()
-        mock_begin_cm = MagicMock()
-        mock_begin_cm.__enter__.return_value = None
-        mock_begin_cm.__exit__.return_value = None
-        mock_conn.begin.return_value = mock_begin_cm
-        mock_engine.connect.return_value = mock_conn
+        mock_cm = MagicMock()
+        mock_cm.__enter__.return_value = mock_conn
+        mock_cm.__exit__.return_value = None
+        mock_engine.connect.return_value = mock_cm
 
         with patch("db.register_models") as mock_register:
             with patch("db.get_engine", return_value=mock_engine):

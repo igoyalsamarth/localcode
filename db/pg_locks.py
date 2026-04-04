@@ -5,10 +5,7 @@ Serializes :func:`db.create_tables` when many processes start together — espec
 **fresh** database, when concurrent ``CREATE`` runs would otherwise collide on system
 catalogs (e.g. ``pg_type``).
 
-``pg_advisory_lock(bigint)`` blocks until acquired; unlock on the same **backend
-session**. With **PgBouncer transaction pooling** (e.g. Supabase pooler :6543), a
-``COMMIT`` returns the server to the pool and drops session locks, so lock + DDL + unlock
-must run in **one DB transaction** on one checkout (see :func:`db.create_tables`).
+``pg_advisory_lock(bigint)`` blocks until acquired; unlock on the same session.
 """
 
 # Distinct int64 values — avoid collisions with other products on the same DB.
