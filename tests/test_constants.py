@@ -12,8 +12,6 @@ from constants import (
     OLLAMA_API_KEY,
     OLLAMA_BASE_URL,
     daytona_sandbox_home,
-    daytona_sandbox_language_explicit,
-    daytona_sandbox_language_or_default,
     daytona_sandbox_os_user,
     daytona_sandbox_snapshot,
     daytona_sandbox_user,
@@ -90,14 +88,6 @@ class TestConstants:
         with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": ""}):
             assert daytona_sandbox_snapshot() == DEFAULT_DAYTONA_SNAPSHOT
 
-    def test_daytona_sandbox_language_explicit(self):
-        with patch.dict(os.environ, {}, clear=True):
-            assert daytona_sandbox_language_explicit() is None
-        with patch.dict(os.environ, {"DAYTONA_SANDBOX_LANGUAGE": "PYTHON"}):
-            assert daytona_sandbox_language_explicit() == "python"
-        with patch.dict(os.environ, {"DAYTONA_SANDBOX_LANGUAGE": "rust"}):
-            assert daytona_sandbox_language_explicit() is None
-
     def test_daytona_sandbox_os_user(self):
         with patch.dict(os.environ, {}, clear=True):
             assert daytona_sandbox_os_user(custom_snapshot=False) is None
@@ -111,21 +101,6 @@ class TestConstants:
             assert daytona_sandbox_os_user(custom_snapshot=True) is None
         with patch.dict(os.environ, {"DAYTONA_OS_USER": "-"}):
             assert daytona_sandbox_os_user(custom_snapshot=True) is None
-
-    def test_daytona_sandbox_language_or_default(self):
-        with patch.dict(os.environ, {}, clear=True):
-            assert daytona_sandbox_language_or_default() is None
-        with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": "none"}):
-            assert daytona_sandbox_language_or_default() == "typescript"
-        with patch.dict(os.environ, {"DAYTONA_SNAPSHOT": "custom"}):
-            assert daytona_sandbox_language_or_default() is None
-        with patch.dict(
-            os.environ,
-            {"DAYTONA_SNAPSHOT": "custom", "DAYTONA_SANDBOX_LANGUAGE": "python"},
-        ):
-            assert daytona_sandbox_language_or_default() == "python"
-        with patch.dict(os.environ, {"DAYTONA_SANDBOX_LANGUAGE": "javascript"}):
-            assert daytona_sandbox_language_or_default() == "javascript"
 
     def test_git_identity_from_env_not_set(self):
         """Test git identity returns None when not set."""
