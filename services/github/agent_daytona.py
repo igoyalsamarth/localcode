@@ -34,12 +34,24 @@ def build_sandbox_env_vars(
 ) -> dict[str, str]:
     """
     Environment inside the sandbox for ``git`` / ``gh``.
+
+    ``WORKFLOW_REPO_ABS`` must match where the agent clones (``/root/repos/...``) so it
+    aligns with Deep Agents file tools, which resolve paths from the real filesystem root
+    (``read_file`` turns ``repos/x`` into ``/repos/x``, which is wrong if the clone lives
+    under ``$HOME``).
     """
     rel = f"repos/{repo_name}"
+    repo_root = f"/root/{rel}"
     env: dict[str, str] = {
         "GH_TOKEN": gh_token,
+        "GITHUB_TOKEN": gh_token,
+        "HOME": "/root",
+        "PWD": "/root",
+        "PATH": "/root/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "WORKFLOW_REPO_REL": rel,
-        "WORKFLOW_REPO_ABS": f"/{rel}",
+        "WORKFLOW_REPO_ABS": repo_root,
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_SSH_COMMAND": "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new",
     }
     if git_author:
         an, ae = git_author
