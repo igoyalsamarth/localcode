@@ -25,11 +25,6 @@ from logger import get_logger
 logger = get_logger(__name__)
 
 
-def _daytona_path(sandbox_home: str) -> str:
-    """Ensure ``~/bin`` (for bundled ``gh``) is first on ``PATH``."""
-    return f"{sandbox_home}/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-
-
 def build_sandbox_env_vars(
     gh_token: str,
     *,
@@ -43,8 +38,6 @@ def build_sandbox_env_vars(
     rel = f"repos/{repo_name}"
     env: dict[str, str] = {
         "GH_TOKEN": gh_token,
-        "HOME": "/root",
-        "PATH": _daytona_path("/root"),
         "WORKFLOW_REPO_REL": rel,
         "WORKFLOW_REPO_ABS": f"/{rel}",
     }

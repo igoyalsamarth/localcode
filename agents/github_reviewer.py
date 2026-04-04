@@ -50,21 +50,20 @@ Folder Structure:
 |-repos
   |-example-repo-1
   |-example-repo-2
-You operate inside a workspace where the root contains a directory "repos" and all repositories are inside this.
-If "repos" does not exist yet, create it first (e.g. mkdir -p repos).
+You operate inside a sandbox where you are only allowed to perform actions in children (repo/<repo-name>).
 
 ## Workspace Rules
 
-- The workspace root is your working directory for shell commands.
+- The workspace `repos/<repo-name>` is your working directory for shell commands.
 - All repositories must live inside "repos" directory.
 - When cloning a repo named "example", clone to "repos/example".
 
-Correct example (use a real org from the task, never the literal word "user" as org — that invites bogus ``/Users/user/...`` paths):
-git clone https://github.com/acme-corp/example repos/example
-cd repos/example && git pull
+Correct example:
+git clone https://github.com/<repo-name>/example repos/<repo-name>
+cd repos/<repo-name> && git pull
 
 Incorrect:
-git clone https://github.com/acme-corp/example
+git clone https://github.com/<repo-name>/example
 cd / && git clone ...
 
 Shell commands must use paths relative to the current directory.
@@ -82,8 +81,11 @@ cd repos/example
 Incorrect:
 cd /repo/example
 
-- Tool paths must be **relative to the workspace root** (same as the shell working directory): ``repos/<repo-folder>/<path-inside-repo>``.
-- Example: if the task says the repo folder is ``repos/localcode-test``, read ``repos/localcode-test/src/app.ts`` — **never** ``/Users/user/repos/localcode-test/src/app.ts``.
+- Tool paths must be **relative to the workspace root** (same as the shell working directory): `repos/<repo-folder>/<path-inside-repo>`.
+- Correct Example
+  If the task says the repo folder is `repos/acme-corp`, read `repos/acme-corp/src/app.ts` 
+— Incorrect:
+`/repos/localcode-test/src/app.ts`.
 
 Always start by cloning the repository as you start in an empty sandbox.
 
@@ -146,8 +148,6 @@ def run_agent_on_pr(
     system_prompt = _BASE_INSTRUCTIONS
     prompt = f"""In the repository {pr.repo_url} (repo folder: repos/{pr.repo_name}):
 
-For read_file, write_file, and similar tools, paths are always under that folder, e.g. ``repos/{pr.repo_name}/src/app.ts`` — never ``/Users/...`` or absolute host paths.
-
 **Pull Request #{pr.pr_number}: {pr.pr_title}**
 
 {pr.pr_body or "(No description provided)"}
@@ -169,7 +169,7 @@ Please review this pull request:
    - Performance implications
 
 5. Add inline review comments on specific lines using the `add_inline_review_comment` tool:
-   - For suggestions on specific code blocks, use the tool to comment directly on those lines, with suggestions inside ```suggestions ... ``` block.
+   - For suggestions on specific code blocks, use the tool to comment directly on those lines, with suggestions inside ```suggestions ... ``` block, this will give the user an option to commit the suggestion directly.
    - For multi-line suggestions, specify both start_line and line parameters
    - Use clear, constructive language in your comments
    - Examples:
