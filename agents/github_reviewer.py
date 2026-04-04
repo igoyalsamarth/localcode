@@ -91,7 +91,7 @@ For GitHub operations, prefer the ``gh`` CLI (``gh pr review``, ``gh pr comment`
 
 def create_github_reviewer_agent(backend: object, *, system_prompt: str) -> object:
     """
-    Build the deep agent graph for the given backend (local virtual FS or Daytona sandbox).
+    Build the deep agent graph for the given backend (Daytona sandbox).
 
     For ``LocalShellBackend``, construct the backend **inside** ``installation_token_env``
     so ``inherit_env=True`` snapshots ``GH_TOKEN`` and git identity.

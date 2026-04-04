@@ -106,27 +106,6 @@ GIT_AUTHOR_EMAIL = os.environ.get("GIT_AUTHOR_EMAIL", "").strip()
 GIT_COMMITTER_NAME = os.environ.get("GIT_COMMITTER_NAME", "").strip()
 GIT_COMMITTER_EMAIL = os.environ.get("GIT_COMMITTER_EMAIL", "").strip()
 
-
-def daytona_sandbox_user() -> str:
-    """
-    Linux user in the custom GHCR sandbox image (default ``greagents``), aligned with the
-    GitHub App bot identity for this product. Must match ``SANDBOX_USER`` in
-    ``docker/agent-sandbox/Dockerfile`` (and ``DAYTONA_OS_USER`` when using that snapshot).
-    """
-    u = os.environ.get("DAYTONA_SANDBOX_USER", "").strip()
-    return u if u else "greagents"
-
-
-def daytona_sandbox_home() -> str:
-    """
-    Sandbox home for ``WORKFLOW_REPO_ABS`` / ``PATH``. For the image built from
-    ``docker/agent-sandbox/``, this matches ``WORKDIR`` (``/home/<SANDBOX_USER>``). Override
-    ``DAYTONA_AGENT_HOME`` if the snapshot uses a different layout.
-    """
-    h = os.environ.get("DAYTONA_AGENT_HOME", "").strip()
-    return h if h else f"/home/{daytona_sandbox_user()}"
-
-
 # Default Daytona snapshot when ``DAYTONA_SNAPSHOT`` is unset (override via env).
 DEFAULT_DAYTONA_SNAPSHOT = "greagents-be-custom-snapshot"
 
@@ -148,28 +127,6 @@ def daytona_sandbox_snapshot() -> str | None:
     if s.lower() in ("-", "none"):
         return None
     return s
-
-
-def daytona_sandbox_os_user(*, custom_snapshot: bool) -> str | None:
-    """
-    Value for Daytona ``CreateSandboxFromSnapshotParams.os_user``.
-
-    When using a **custom** snapshot (default or non-empty ``DAYTONA_SNAPSHOT``), defaults to
-    :func:`daytona_sandbox_user` so the process runs as the bot-aligned account.
-
-    For Daytona's **stock** snapshots, returns ``None`` unless ``DAYTONA_OS_USER`` is set
-    (use ``-`` or ``none`` to force ``None`` even with a custom snapshot).
-    """
-    raw = os.environ.get("DAYTONA_OS_USER")
-    if raw is not None:
-        stripped = raw.strip()
-        if stripped.lower() in ("-", "none"):
-            return None
-        if stripped:
-            return stripped
-    if custom_snapshot:
-        return daytona_sandbox_user()
-    return None
 
 
 def git_identity_from_env() -> tuple[tuple[str, str], tuple[str, str]] | None:
