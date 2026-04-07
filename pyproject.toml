@@ -23,6 +23,8 @@ dependencies = [
   "dodopayments[webhooks]>=1.92.1",
   "axiom-py>=0.10.0",
   "structlog>=25.5.0",
+  "tree-sitter>=0.24.0",
+  "tree-sitter-language-pack>=0.7.3",
 ]
 
 [project.optional-dependencies]

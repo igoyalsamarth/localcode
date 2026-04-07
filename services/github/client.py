@@ -146,6 +146,18 @@ def list_pr_review_comments(
     return _get_json_paginated_list(url, token)
 
 
+def list_pr_review_files(
+    owner: str, repo: str, pr_number: int, token: str
+) -> list[dict[str, Any]]:
+    """
+    List changed files on a pull request, including per-file patch hunks when available.
+
+    Uses ``GET /repos/{owner}/{repo}/pulls/{pr_number}/files``.
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/files"
+    return _get_json_paginated_list(url, token)
+
+
 def ensure_repo_label_exists(
     owner: str,
     repo: str,
@@ -261,6 +273,29 @@ def approve_pr(owner: str, repo: str, pr_number: int, token: str, body: str = ""
         "body": body,
     }
     r = requests.post(url, headers=headers, json=payload)
+    r.raise_for_status()
+    return r.json()
+
+
+def submit_pr_review(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    token: str,
+    event: str,
+    body: str = "",
+):
+    """Submit a GitHub pull request review event (APPROVE / REQUEST_CHANGES / COMMENT)."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews"
+    r = requests.post(
+        url,
+        headers=_issue_headers(token),
+        json={
+            "event": event,
+            "body": body,
+        },
+        timeout=_DEFAULT_REQUEST_TIMEOUT_SEC,
+    )
     r.raise_for_status()
     return r.json()
 
