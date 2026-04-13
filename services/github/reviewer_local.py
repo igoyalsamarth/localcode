@@ -865,10 +865,7 @@ def build_repository_snapshot(repo_dir: Path) -> RepositorySnapshot:
         if ".git" in path.parts:
             continue
         lower_path = path.name.lower()
-        if lower_path.endswith(".lock") or lower_path in {
-            "package-lock.json",
-            "bun.lock",
-        }:
+        if "lock" in lower_path:
             continue
         parsed = _parse_file(path, repo_dir)
         files[parsed.path] = parsed
@@ -1148,6 +1145,39 @@ def fetch_previous_comments(
     }
 
 
+def _llm_context_payload(
+    relevant_context: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Keep only minimal context for the LLM: code plus lightweight file anchors.
+    Drop symbol metadata (names, ranges, calls, imports, nested symbol trees).
+    """
+    payload: list[dict[str, Any]] = []
+    for piece in relevant_context:
+        code = str(piece.get("code") or "").strip()
+        if not code:
+            continue
+        payload.append(
+            {
+                "kind": piece.get("kind"),
+                "path": piece.get("path"),
+                "hunk_header": piece.get("hunk_header"),
+                "code": code,
+            }
+        )
+    return payload
+
+
+def _extract_json_payload(text: str) -> dict[str, Any]:
+    payload = text.strip()
+    if payload.startswith("```"):
+        start = payload.find("{")
+        end = payload.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            payload = payload[start : end + 1]
+    return json.loads(payload)
+
+
 def build_review_prompt(
     pr: PROpenedForReview,
     file_diffs: list[PullRequestFileDiff],
@@ -1165,6 +1195,7 @@ def build_review_prompt(
         }
         for file_diff in file_diffs
     ]
+    llm_context_payload = _llm_context_payload(relevant_context)
     return f"""
 You are reviewing GitHub pull request #{pr.pr_number} for repository {pr.full_name}.
 
@@ -1187,7 +1218,7 @@ Changed file diffs:
 {json.dumps(diff_payload, indent=2)}
 
 Relevant extracted code context:
-{json.dumps(relevant_context, indent=2)}
+{json.dumps(llm_context_payload, indent=2)}
 
 Existing PR comments:
 {json.dumps(previous_comments, indent=2)}
@@ -1206,7 +1237,6 @@ def generate_review_decision(
         relevant_context,
         previous_comments,
     )
-    print(prompt)
     agent = create_agent(
         model=get_github_deep_agent_llm(),
         tools=[],

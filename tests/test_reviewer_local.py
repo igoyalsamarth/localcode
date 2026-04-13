@@ -93,7 +93,6 @@ class TestReviewerPayloadParsing:
 
         decision = generate_review_decision(
             _sample_pr(),
-            Mock(file_inventory=[]),
             [],
             [],
             {"issue_comments": [], "review_comments": []},
@@ -109,7 +108,6 @@ class TestReviewerPayloadParsing:
         pr = _sample_pr()
         prompt = build_review_prompt(
             pr,
-            Mock(snapshot_path="/tmp/snapshot.json", file_inventory=[{"path": "a.py"}]),
             [
                 PullRequestFileDiff(
                     path="a.py",
@@ -125,6 +123,9 @@ class TestReviewerPayloadParsing:
                     "kind": "repo_context",
                     "path": "a.py",
                     "name": "foo",
+                    "line_range": [3, 4],
+                    "calls": ["bar"],
+                    "imports_used": ["Request"],
                     "code": "def foo():\n    return 1",
                 }
             ],
@@ -134,7 +135,11 @@ class TestReviewerPayloadParsing:
         assert "Repository snapshot JSON path" not in prompt
         assert "Repository symbol snapshot" not in prompt
         assert "Relevant extracted code context" in prompt
-        assert '"name": "foo"' in prompt
+        assert '"code": "def foo():\\n    return 1"' in prompt
+        assert '"name": "foo"' not in prompt
+        assert '"line_range"' not in prompt
+        assert '"calls"' not in prompt
+        assert '"imports_used"' not in prompt
 
 
 @pytest.mark.unit
