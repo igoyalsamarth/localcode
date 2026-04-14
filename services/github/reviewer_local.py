@@ -919,6 +919,7 @@ def build_repository_snapshot(repo_dir: Path) -> RepositorySnapshot:
         ),
         encoding="utf-8",
     )
+    logger.info("Repository snapshot built for %s", repo_dir)
     return RepositorySnapshot(
         repo_dir=repo_dir,
         snapshot_path=snapshot_path,
@@ -1003,6 +1004,7 @@ def fetch_pr_file_diffs(
     pr_number: int,
     token: str,
 ) -> list[PullRequestFileDiff]:
+    logger.info("Fetching PR file diffs for %s", pr_number)
     files = list_pr_review_files(owner, repo, pr_number, token)
     out: list[PullRequestFileDiff] = []
     for item in files:
@@ -1018,6 +1020,7 @@ def fetch_pr_file_diffs(
                 hunks=parse_patch(patch),
             )
         )
+    logger.info("PR file diffs fetched for %s", pr_number)
     return out
 
 

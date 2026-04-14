@@ -52,28 +52,29 @@ def run_agent_on_pr(
             "GitHub reviewer using local tree-sitter pipeline (run_id=%s)", run_id
         )
         repo_dir = clone_or_prepare_repo(pr, token_value)
+        logger.info("Repo cloned or prepared for %s", pr.pr_number)
         snapshot = build_repository_snapshot(repo_dir)
-        print(snapshot)
+        logger.info("Repository snapshot built for %s", pr.pr_number)
         file_diffs = fetch_pr_file_diffs(
             pr.owner, pr.repo_name, pr.pr_number, token_value
         )
-        print(file_diffs)
+        logger.info("PR file diffs fetched for %s", pr.pr_number)
         relevant_context = collect_relevant_context(snapshot, file_diffs)
-        print(relevant_context)
+        logger.info("Relevant context collected for %s", pr.pr_number)
         previous_comments = fetch_previous_comments(
             pr.owner,
             pr.repo_name,
             pr.pr_number,
             token_value,
         )
-        print(previous_comments)
+        logger.info("Previous comments fetched for %s", pr.pr_number)
         decision = generate_review_decision(
             pr,
             file_diffs,
             relevant_context,
             previous_comments,
         )
-        print(decision)
+        logger.info("Review decision generated for %s", pr.pr_number)
         publish_review(pr, token_value, decision, file_diffs)
     finally:
         remove_reviewer_clone(pr)
