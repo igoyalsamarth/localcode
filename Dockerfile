@@ -2,6 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# Reviewer workflow clones PR repositories locally inside the container.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy uv binary
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 

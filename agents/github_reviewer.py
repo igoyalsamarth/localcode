@@ -1,108 +1,27 @@
-"""
-Deep-agent GitHub reviewer: clones repos, checks out PR branches, reviews code changes.
-
-Invoked via `run_agent_on_pr` (e.g. from `services.github.review_workflow`).
-Uses a stable workflow ``run_id`` (repo + PR number) for usage rows, stream config,
-and Daytona labels; the usage table's primary key is unique per execution.
-
-When ``DAYTONA_API_KEY`` is set, execution uses a `Daytona`_ remote sandbox (``langchain-daytona``);
-otherwise the local ``LocalShellBackend`` virtual filesystem under ``./workspace``.
-
-.. _Daytona: https://docs.langchain.com/oss/python/deepagents/sandboxes#daytona
-"""
+"""Local GitHub reviewer pipeline backed by repository cloning and tree-sitter."""
 
 from __future__ import annotations
 
-import os
-
-from deepagents import create_deep_agent
-
-from agents.deep_agent_stream import stream_deep_agent
 from agents.github_llm import get_github_deep_agent_llm
-from agents.reviewer_tools import add_inline_review_comment
 from agents.usage_callback import AgentLlmUsageCallbackHandler
-from constants import (
-    AGENT_LLM_PROVIDER,
-    git_identity_from_env,
-)
+from constants import AGENT_LLM_PROVIDER
 from logger import get_logger
-from services.github.agent_daytona import (
-    build_sandbox_env_vars,
-    create_daytona_agent_session,
-    stop_sandbox,
+from services.github.reviewer_local import (
+    build_repository_snapshot,
+    clone_or_prepare_repo,
+    collect_relevant_context,
+    fetch_previous_comments,
+    fetch_pr_file_diffs,
+    generate_review_decision,
+    publish_review,
+    remove_reviewer_clone,
 )
 from services.github.workflow_run_id import github_pr_workflow_run_id
 from services.github.workflow_usage import record_pr_workflow_usage
-from services.github.installation_token import (
-    get_installation_token_for_repo,
-    github_bot_git_identity,
-)
+from services.github.installation_token import get_installation_token_for_repo
 from services.github.pr_payload import PROpenedForReview
 
 logger = get_logger(__name__)
-
-_BASE_INSTRUCTIONS = """You are an expert reviewer for polyglot codebases.
-
-Your job is to review pull requests and provide constructive feedback.
-
-Folder Structure:
-/
-|-repos
-  |-example-repo-1
-  |-example-repo-2
-You operate inside a sandbox where you are only allowed to perform actions in children directories (repos/<repo-name>).
-
-## Workspace Rules
-
-- The workspace `repos/<repo-name>` is your working directory for shell commands.
-- All repositories must live inside "repos" directory.
-- When cloning a repo named "example", clone to "repos/example".
-
-Correct example:
-git clone https://github.com/<repo-name>/example repos/<repo-name>
-cd repos/<repo-name> && git pull
-
-Incorrect:
-git clone https://github.com/<repo-name>/example
-cd / && git clone ...
-
-Shell commands must use paths relative to the current directory.
-
-Do NOT use absolute paths such as:
-/repos/...
-
-Instead use:
-repos/<repo-name>
-
-Correct:
-cd repos/<repo-name>
-
-Incorrect:
-cd /repo/<repo-name>
-
-pwd will be `/home/daytona/`, consider this when doing file-ops.
-For Example:
-read_file /home/daytona/repos/<repos-name>
-
-Always start by cloning the repository as you start in an empty sandbox.
-
-For GitHub operations, prefer the ``gh`` CLI (``gh pr review``, ``gh pr comment``, …) with ``GH_TOKEN`` in the environment; it is more reliable than raw ``curl``.
-"""
-
-
-def create_github_reviewer_agent(backend: object, *, system_prompt: str) -> object:
-    """
-    Build the deep agent graph for the given backend (Daytona sandbox).
-
-    For ``LocalShellBackend``, construct the backend **inside** ``installation_token_env``
-    so ``inherit_env=True`` snapshots ``GH_TOKEN`` and git identity.
-    """
-    return create_deep_agent(
-        model=get_github_deep_agent_llm(),
-        system_prompt=system_prompt,
-        backend=backend,
-        tools=[add_inline_review_comment],
-    )
 
 
 def run_agent_on_pr(
@@ -123,121 +42,42 @@ def run_agent_on_pr(
         pr.repo_name,
         github_installation_id=pr.github_installation_id,
     )
-
-    env_identity = git_identity_from_env()
-    if env_identity:
-        (an, ae), (cn, ce) = env_identity
-        git_author_pair = (an, ae)
-        git_committer_pair = (cn, ce) if (cn != an or ce != ae) else None
-    else:
-        api_id = github_bot_git_identity()
-        git_author_pair = api_id
-        git_committer_pair = None
-        if not api_id:
-            logger.warning(
-                "Could not set GIT_AUTHOR_* for bot commits; set GIT_AUTHOR_NAME and "
-                "GIT_AUTHOR_EMAIL in .env, or set GITHUB_APP_SLUG / fix JWT GET /app. "
-                "Otherwise git may use local user.name/email."
-            )
-
-    full_name = pr.full_name
-    clone_url = f"https://x-access-token:$GH_TOKEN@github.com/{full_name}.git"
-    system_prompt = _BASE_INSTRUCTIONS
-    prompt = f"""In the repository {pr.repo_url} (repo folder: repos/{pr.repo_name}):
-
-**Pull Request #{pr.pr_number}: {pr.pr_title}**
-
-{pr.pr_body or "(No description provided)"}
-
-Base branch: {pr.base_branch}
-Head branch: {pr.head_branch}
-Head SHA: {pr.head_sha}
-
-Please review this pull request:
-
-1. Clone the repo to repos/{pr.repo_name} if it doesn't exist (use: git clone {clone_url} repos/{pr.repo_name})
-2. Checkout the PR branch: git checkout {pr.head_branch} (or git fetch origin {pr.head_branch} && git checkout {pr.head_branch})
-3. Compare the changes with the base branch: git diff {pr.base_branch}...{pr.head_branch}
-
-4. Review the code changes for:
-   - Code quality and best practices
-   - Potential bugs or issues
-   - Security concerns
-   - Performance implications
-
-5. Add inline review comments on specific lines using the `add_inline_review_comment` tool:
-   - For suggestions on specific code blocks, use the tool to comment directly on those lines, with suggestions inside ```suggestions ... ``` block, this will give the user an option to commit the suggestion directly.
-   - For multi-line suggestions, specify both start_line and line parameters
-   - Use clear, constructive language in your comments
-   - Examples:
-     * Single line: add_inline_review_comment(path="src/utils.ts", line=42, body="Consider using const instead of let")
-     * Multi-line: add_inline_review_comment(path="src/api.ts", line=50, start_line=45, body="This block could be refactored")
-
-6. After adding inline comments, post a summary comment using:
-   gh pr comment {pr.pr_number} --body "## Review Summary
-
-   I've reviewed the changes and added inline comments on specific lines.
-
-   **Key Points:**
-   - [List main observations]
-
-   **Overall Assessment:**
-   [Your verdict]"
-
-7. Finally, submit your review:
-   - If everything looks good: gh pr review {pr.pr_number} --approve --body "LGTM! See inline comments for minor suggestions."
-   - If changes needed: gh pr review {pr.pr_number} --request-changes --body "Please address the inline comments."
-   - If just commenting: gh pr review {pr.pr_number} --comment --body "See inline comments for feedback."
-
-Remember: Use inline comments for specific code feedback, and the summary comment for overall observations.
-"""
     run_id = github_pr_workflow_run_id(pr.full_name, pr.pr_number)
     usage_cb = AgentLlmUsageCallbackHandler()
     llm = get_github_deep_agent_llm()
+    previous_callbacks = llm.callbacks
     llm.callbacks = [usage_cb]
-    stream_config: dict = {
-        "configurable": {"thread_id": run_id},
-        "callbacks": [usage_cb],
-    }
-
-    # PR context for inline review tool (``agents.reviewer_tools``)
-    os.environ["GITHUB_PR_OWNER"] = pr.owner
-    os.environ["GITHUB_PR_REPO"] = pr.repo_name
-    os.environ["GITHUB_PR_NUMBER"] = str(pr.pr_number)
-    os.environ["GITHUB_PR_HEAD_SHA"] = pr.head_sha
-
-    # LangChain tools run in this worker process. Daytona only puts GH_TOKEN in the
-    # sandbox env, so without this the inline review tool sees no token on the host.
-    os.environ["GH_TOKEN"] = token_value
-
-    daytona_session = None
     try:
         logger.info(
-            "GitHub reviewer using Daytona sandbox (run_id=%s)",
-            run_id,
+            "GitHub reviewer using local tree-sitter pipeline (run_id=%s)", run_id
         )
-        env_vars = build_sandbox_env_vars(
+        repo_dir = clone_or_prepare_repo(pr, token_value)
+        snapshot = build_repository_snapshot(repo_dir)
+        print(snapshot)
+        file_diffs = fetch_pr_file_diffs(
+            pr.owner, pr.repo_name, pr.pr_number, token_value
+        )
+        print(file_diffs)
+        relevant_context = collect_relevant_context(snapshot, file_diffs)
+        print(relevant_context)
+        previous_comments = fetch_previous_comments(
+            pr.owner,
+            pr.repo_name,
+            pr.pr_number,
             token_value,
-            git_author=git_author_pair,
-            git_committer=git_committer_pair,
-            repo_name=pr.repo_name,
         )
-        env_vars.update(
-            {
-                "GITHUB_PR_OWNER": pr.owner,
-                "GITHUB_PR_REPO": pr.repo_name,
-                "GITHUB_PR_NUMBER": str(pr.pr_number),
-                "GITHUB_PR_HEAD_SHA": pr.head_sha,
-            }
+        print(previous_comments)
+        decision = generate_review_decision(
+            pr,
+            file_diffs,
+            relevant_context,
+            previous_comments,
         )
-        backend, session = create_daytona_agent_session(run_id, env_vars)
-        daytona_session = session
-        agent = create_github_reviewer_agent(backend, system_prompt=system_prompt)
-        stream_deep_agent(agent, prompt, stream_config)
-
+        print(decision)
+        publish_review(pr, token_value, decision, file_diffs)
     finally:
-        llm.callbacks = None
-        stop_sandbox(daytona_session)
+        remove_reviewer_clone(pr)
+        llm.callbacks = previous_callbacks
         record_pr_workflow_usage(
             pr,
             run_id,

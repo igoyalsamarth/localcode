@@ -47,7 +47,11 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://greagents.com", "https://www.greagents.com"],
+    allow_origins=[
+        "https://greagents.com",
+        "https://www.greagents.com",
+        "http://localhost:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
