@@ -14,6 +14,7 @@ from services.github.reviewer_local import (
     fetch_pr_file_diffs,
     generate_review_decision,
     publish_review,
+    remove_reviewer_clone,
 )
 from services.github.workflow_run_id import github_pr_workflow_run_id
 from services.github.workflow_usage import record_pr_workflow_usage
@@ -75,6 +76,7 @@ def run_agent_on_pr(
         print(decision)
         publish_review(pr, token_value, decision, file_diffs)
     finally:
+        remove_reviewer_clone(pr)
         llm.callbacks = previous_callbacks
         record_pr_workflow_usage(
             pr,

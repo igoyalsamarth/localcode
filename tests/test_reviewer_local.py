@@ -401,6 +401,7 @@ class TestPublishReview:
 
 @pytest.mark.unit
 class TestRunAgentOnPr:
+    @patch("agents.github_reviewer.remove_reviewer_clone")
     @patch("agents.github_reviewer.record_pr_workflow_usage")
     @patch("agents.github_reviewer.publish_review")
     @patch("agents.github_reviewer.generate_review_decision")
@@ -421,6 +422,7 @@ class TestRunAgentOnPr:
         mock_generate,
         mock_publish,
         mock_record_usage,
+        mock_remove_clone,
     ):
         pr = _sample_pr()
         llm = Mock()
@@ -449,4 +451,5 @@ class TestRunAgentOnPr:
         mock_generate.assert_called_once()
         mock_publish.assert_called_once_with(pr, "tok", mock_generate.return_value, [])
         mock_record_usage.assert_called_once()
+        mock_remove_clone.assert_called_once_with(pr)
         assert llm.callbacks is None

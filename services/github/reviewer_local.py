@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
@@ -267,21 +268,46 @@ def _run_git(
     return proc.stdout.strip()
 
 
-def clone_or_prepare_repo(pr: PROpenedForReview, token: str) -> Path:
+def reviewer_clone_repo_path(pr: PROpenedForReview) -> Path:
+    """Directory used for a full clone of ``pr`` under the worker temp dir."""
     base_dir = Path(tempfile.gettempdir()) / "greagent-reviewer"
+    return base_dir / f"{pr.owner}__{pr.repo_name}"
+
+
+def remove_reviewer_clone(pr: PROpenedForReview) -> None:
+    """Delete the local clone for this PR so the worker does not accumulate repos."""
+    repo_dir = reviewer_clone_repo_path(pr)
+    if not repo_dir.exists():
+        return
+    try:
+        shutil.rmtree(repo_dir)
+    except OSError as exc:
+        logger.warning("Failed to remove reviewer clone at %s: %s", repo_dir, exc)
+
+
+def clone_or_prepare_repo(pr: PROpenedForReview, token: str) -> Path:
+    repo_dir = reviewer_clone_repo_path(pr)
+    base_dir = repo_dir.parent
     base_dir.mkdir(parents=True, exist_ok=True)
-    repo_dir = base_dir / f"{pr.owner}__{pr.repo_name}"
     clone_url = f"https://x-access-token:{token}@github.com/{pr.full_name}.git"
     env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
 
     if not repo_dir.exists():
-        _run_git(["clone", clone_url, str(repo_dir)], env=env)
+        _run_git(
+            ["clone", "--depth=1", "--single-branch", clone_url, str(repo_dir)],
+            env=env,
+        )
     else:
         _run_git(["remote", "set-url", "origin", clone_url], cwd=repo_dir, env=env)
 
     _run_git(["fetch", "--prune", "origin"], cwd=repo_dir, env=env)
     _run_git(
-        ["fetch", "origin", f"pull/{pr.pr_number}/head:greagent/pr-{pr.pr_number}"],
+        [
+            "fetch",
+            "--depth=1",
+            "origin",
+            f"pull/{pr.pr_number}/head:greagent/pr-{pr.pr_number}",
+        ],
         cwd=repo_dir,
         env=env,
     )
