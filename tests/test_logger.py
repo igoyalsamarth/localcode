@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import structlog
+from axiom_py.client import AxiomError
 from structlog.stdlib import ProcessorFormatter
 
 import logger as logger_module
@@ -109,5 +110,22 @@ class TestLogger:
         assert handler.buffer[0]["msg"] == '127.0.0.1:1 - "GET /health HTTP/1.1" 200'
         assert "message" not in handler.buffer[0]
         assert handler.buffer[0]["args"] == ()
+
+        handler.timer.cancel()
+
+    def test_axiom_flush_does_not_raise_on_ingest_failure(self):
+        """Transient Axiom errors must not propagate from logging."""
+        client = MagicMock()
+        client.ingest_events.side_effect = AxiomError(
+            520, AxiomError.Response(message="<none>", error=None)
+        )
+        handler = logger_module.AxiomLogHandler(client, "greagent-test", interval=60)
+        handler.timer.cancel()
+        handler.buffer = [{"msg": "pending"}]
+
+        handler.flush()
+
+        client.ingest_events.assert_called_once()
+        assert handler.buffer == [{"msg": "pending"}]
 
         handler.timer.cancel()

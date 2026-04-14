@@ -35,6 +35,23 @@ _axiom_enabled = False
 class AxiomLogHandler(AxiomHandler):
     """Axiom handler that normalizes stdlib log records before ingest."""
 
+    def flush(self) -> None:
+        """Ship buffered records; never raise — ingest failures must not break callers."""
+        self.last_flush = time.monotonic()
+        if len(self.buffer) == 0:
+            return
+        local_buffer, self.buffer = self.buffer, []
+        try:
+            self.client.ingest_events(self.dataset, local_buffer)
+        except Exception:
+            self.buffer = local_buffer + self.buffer
+            try:
+                sys.stderr.write(
+                    "[logger] Axiom ingest failed; logs kept for retry.\n"
+                )
+            except OSError:
+                pass
+
     def emit(self, record: logging.LogRecord) -> None:
         payload = record.__dict__.copy()
         rendered = record.getMessage()
