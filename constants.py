@@ -5,9 +5,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _MILLION = Decimal(1_000_000)
-# Default GitHub agent LLM (see MODEL). Priced per million tokens for Kimi K2.5-class models.
-_DEFAULT_LLM_INPUT_USD_PER_MILLION = Decimal("0.60")
-_DEFAULT_LLM_OUTPUT_USD_PER_MILLION = Decimal("3.00")
+# Default GitHub agent LLM (see MODEL). Priced per million tokens (matches catalog per-token rates).
+# MiniMax M2.7 cloud defaults: $0.30 / 1M input, $1.20 / 1M output (see ``models`` table).
+_DEFAULT_LLM_INPUT_USD_PER_MILLION = Decimal("0.30")
+_DEFAULT_LLM_OUTPUT_USD_PER_MILLION = Decimal("1.20")
 
 # LLM billing provider string stored on usage rows (Ollama, OpenAI, etc.)
 AGENT_LLM_PROVIDER = os.environ.get("AGENT_LLM_PROVIDER", "ollama")
@@ -18,11 +19,13 @@ OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "https://ollama.com").rstrip
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "").strip()
 OLLAMA_MAX_RETRIES = int(os.environ.get("OLLAMA_MAX_RETRIES", "10"))
 OLLAMA_TIMEOUT_SEC = int(os.environ.get("OLLAMA_TIMEOUT_SEC", "120"))
+# PR review runs larger prompts (diffs + tree-sitter context); allow a higher ceiling by default.
+OLLAMA_REVIEW_TIMEOUT_SEC = int(os.environ.get("OLLAMA_REVIEW_TIMEOUT_SEC", "300"))
 
 
 def get_agent_model_name() -> str:
     """Default / configured LLM id for GitHub deep agents (``MODEL`` env)."""
-    return os.environ.get("MODEL", "kimi-k2.5:cloud")
+    return os.environ.get("MODEL", "minimax-m2.7:cloud")
 
 
 def default_catalog_model_spec() -> tuple[str, str, Decimal, Decimal]:
@@ -30,7 +33,7 @@ def default_catalog_model_spec() -> tuple[str, str, Decimal, Decimal]:
     Provider, model id, and per-token USD rates for a new ``models`` catalog row.
 
     Aligns with :func:`get_agent_model_name` and :data:`AGENT_LLM_PROVIDER` so usage
-    keys match. Rates: $0.60 / 1M input, $3.00 / 1M output (stored per token).
+    keys match. Rates: $0.30 / 1M input, $1.20 / 1M output (stored per token).
     """
     inp = _DEFAULT_LLM_INPUT_USD_PER_MILLION / _MILLION
     out = _DEFAULT_LLM_OUTPUT_USD_PER_MILLION / _MILLION
@@ -105,6 +108,10 @@ GIT_AUTHOR_NAME = os.environ.get("GIT_AUTHOR_NAME", "").strip()
 GIT_AUTHOR_EMAIL = os.environ.get("GIT_AUTHOR_EMAIL", "").strip()
 GIT_COMMITTER_NAME = os.environ.get("GIT_COMMITTER_NAME", "").strip()
 GIT_COMMITTER_EMAIL = os.environ.get("GIT_COMMITTER_EMAIL", "").strip()
+
+# GitHub coder Daytona sandbox: wall-clock cap and matching idle auto-stop (API uses minutes).
+DAYTONA_CODER_MAX_MINUTES = int(os.environ.get("DAYTONA_CODER_MAX_MINUTES", "15"))
+DAYTONA_CODER_WALL_CLOCK_SEC = max(0, DAYTONA_CODER_MAX_MINUTES * 60)
 
 # Default Daytona snapshot when ``DAYTONA_SNAPSHOT`` is unset (override via env).
 DEFAULT_DAYTONA_SNAPSHOT = "greagents-be-custom-snapshot"

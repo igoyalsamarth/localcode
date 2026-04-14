@@ -14,6 +14,8 @@ dramatiq.set_broker(broker)
 # (tighter than splitting across ``github_coder`` / ``github_reviewer`` queues).
 _GITHUB_AGENT_QUEUE = GITHUB_AGENT_QUEUE_NAME
 _GITHUB_AGENT_ACTOR_OPTIONS = {"max_retries": 3, "time_limit": 3600000}
+# Large org “all repositories” installs: list + upsert + per-repo label HTTP can exceed coder runs.
+_INSTALLATION_SYNC_ACTOR_OPTIONS = {"max_retries": 3, "time_limit": 7_200_000}
 
 
 @dramatiq.actor(queue_name=_GITHUB_AGENT_QUEUE, **_GITHUB_AGENT_ACTOR_OPTIONS)
@@ -213,3 +215,36 @@ def process_github_pr_review(pr_data: dict) -> None:
             )
 
             raise
+
+
+@dramatiq.actor(
+    queue_name=_GITHUB_AGENT_QUEUE, **_INSTALLATION_SYNC_ACTOR_OPTIONS
+)
+def process_github_installation_repo_sync(
+    org_id: str,
+    installation_id: int,
+    account_login: str | None = None,
+) -> None:
+    """
+    Post-installation: list all repos for the GitHub App installation, upsert DB rows,
+    default agents, and ensure GreAgent labels (does not block the API webhook/callback).
+    """
+    from uuid import UUID
+
+    from db import session_scope
+    from services.github.installation_sync import (
+        sync_installation_repositories_from_github_api,
+    )
+
+    logger.info(
+        "Worker syncing installation repositories org_id=%s installation_id=%s",
+        org_id,
+        installation_id,
+    )
+    with session_scope() as session:
+        sync_installation_repositories_from_github_api(
+            session,
+            organization_id=UUID(org_id),
+            installation_id=int(installation_id),
+            account_login_fallback=account_login,
+        )

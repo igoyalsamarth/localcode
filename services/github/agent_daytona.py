@@ -22,7 +22,13 @@ from daytona import (
 )
 from langchain_daytona import DaytonaSandbox
 
-from constants import DAYTONA_INSTALL_GH_CLI, GITHUB_CLI_VERSION, daytona_sandbox_home
+from constants import (
+    DAYTONA_CODER_MAX_MINUTES,
+    DAYTONA_CODER_WALL_CLOCK_SEC,
+    DAYTONA_INSTALL_GH_CLI,
+    GITHUB_CLI_VERSION,
+    daytona_sandbox_home,
+)
 from logger import get_logger
 
 logger = get_logger(__name__)
@@ -174,14 +180,20 @@ def create_daytona_agent_session(
     ``ephemeral=True`` maps to immediate removal once the sandbox is stopped (see Daytona
     ``CreateSandboxBaseParams``). Always call :func:`stop_sandbox` after the agent run.
 
+    Lifecycle caps (see :data:`~constants.DAYTONA_CODER_MAX_MINUTES`): idle auto-stop and
+    per-command timeouts align with the coder wall-clock limit; a timer in the coder also
+    calls :func:`stop_sandbox` when the wall-clock cap is reached.
+
     Uses the TypeScript default snapshot so Node/npm/git tooling matches agent prompts.
     """
     client = Daytona()
+    idle_stop_min = DAYTONA_CODER_MAX_MINUTES if DAYTONA_CODER_MAX_MINUTES > 0 else 0
     params = CreateSandboxFromSnapshotParams(
         language="typescript",
         env_vars=env_vars,
         labels={"run_id": run_id, "app": "greagent-github-deep-agent"},
         ephemeral=True,
+        auto_stop_interval=idle_stop_min,
     )
     sandbox = client.create(params, timeout=create_timeout_sec)
     home = sandbox.get_user_home_dir()
@@ -190,7 +202,10 @@ def create_daytona_agent_session(
         sandbox_home=home,
         path_for_check=_daytona_path(home),
     )
-    backend = DaytonaSandbox(sandbox=sandbox, timeout=30 * 60)
+    cmd_timeout = (
+        DAYTONA_CODER_WALL_CLOCK_SEC if DAYTONA_CODER_WALL_CLOCK_SEC > 0 else 30 * 60
+    )
+    backend = DaytonaSandbox(sandbox=sandbox, timeout=cmd_timeout)
     return backend, DaytonaAgentSession(daytona=client, sandbox=sandbox)
 
 

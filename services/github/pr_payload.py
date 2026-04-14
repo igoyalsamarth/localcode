@@ -29,6 +29,10 @@ class PROpenedForReview(BaseModel):
     base_branch: str = Field(..., description="Base branch (e.g. main)")
     head_branch: str = Field(..., description="Head branch (e.g. feature-branch)")
     head_sha: str = Field(..., description="Head commit SHA")
+    base_sha: str | None = Field(
+        default=None,
+        description="Base commit SHA of the PR (from pull_request.base.sha); used to recover patches when the files API omits them.",
+    )
     github_installation_id: int | None = Field(
         default=None,
         description="installation.id from the webhook (preferred when minting app tokens)",
@@ -72,6 +76,8 @@ class PROpenedForReview(BaseModel):
         base_branch = base.get("ref")
         head_branch = head.get("ref")
         head_sha = head.get("sha")
+        base_sha_raw = base.get("sha")
+        base_sha = str(base_sha_raw) if isinstance(base_sha_raw, str) else None
 
         if not base_branch or not head_branch or not head_sha:
             return None
@@ -98,6 +104,7 @@ class PROpenedForReview(BaseModel):
             base_branch=str(base_branch),
             head_branch=str(head_branch),
             head_sha=str(head_sha),
+            base_sha=base_sha,
             github_installation_id=github_installation_id,
             github_sender_login=sender_login,
         )

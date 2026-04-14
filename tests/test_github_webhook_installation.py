@@ -65,9 +65,10 @@ class TestGithubWebhookInstallationCreated:
         with (
             patch("api.wh.github.session_scope", _patched_session_scope(db_session)),
             patch(
-                "api.wh.github.complete_installation_for_workspace",
-                lambda *a, **k: None,
+                "api.wh.github.bind_installation_to_workspace",
+                lambda *a, **k: "gh_wh",
             ),
+            patch("api.wh.github.process_github_installation_repo_sync.send"),
         ):
             r = _installation_created(data)
         assert r["status"] == "received"

@@ -244,7 +244,14 @@ class ReviewInlineComment(BaseModel):
         ...,
         description="The line number (1-based) on which to comment on the specified side.",
     )
-    body: str = Field(..., description="Content body of the inline comment.")
+    body: str = Field(
+        ...,
+        description=(
+            "Markdown: one concrete issue per comment—wrong behavior, exploit, crash, or "
+            "data corruption risk—and a specific fix. Skip style, naming, or opinions unless "
+            "they hide a bug."
+        ),
+    )
     side: Literal["RIGHT", "LEFT"] = Field(
         "RIGHT",
         description="Diff side: 'RIGHT' for head branch, 'LEFT' for base branch.",
@@ -260,13 +267,23 @@ class ReviewInlineComment(BaseModel):
 
 
 class ReviewDecision(BaseModel):
-    summary: str = Field(..., description="Short human-readable review summary.")
-    review_event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"] = "COMMENT"
-    review_body: str = Field(..., description="Body for the final PR review event.")
-    pr_comment_body: str = Field(
-        ..., description="Conversation comment to post on the PR."
+    summary: str = Field(
+        ...,
+        description="One or two sentences: only substantive risks or that the diff looks sound.",
     )
-    inline_comments: list[ReviewInlineComment] = Field(default_factory=list)
+    review_event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"] = "COMMENT"
+    review_body: str = Field(
+        ...,
+        description="Markdown for the submitted review event: headline, bullets for key findings.",
+    )
+    pr_comment_body: str = Field(
+        ...,
+        description="Single PR thread comment: short overview + bullets; no duplicate of every inline.",
+    )
+    inline_comments: list[ReviewInlineComment] = Field(
+        default_factory=list,
+        description="Each item one anchored issue on the diff; empty list if nothing substantive.",
+    )
 
 
 def detect_language(path: str) -> str | None:
@@ -1364,13 +1381,26 @@ def build_review_prompt(
     return f"""
 You are reviewing GitHub pull request #{pr.pr_number} for repository {pr.full_name}.
 
-Rules:
-- Review only the reviewer agent path; do not suggest code unrelated to this diff.
-- Prefer inline comments only for actionable, concrete issues.
-- Do not repeat existing comments unless the issue is still unresolved and materially important.
-- Inline comment lines must match the provided commentable lines for the file and side.
-- Use REQUEST_CHANGES only for real correctness, security, or maintainability issues that should block merge.
-- Use APPROVE when there are no substantive findings. Use COMMENT for non-blocking feedback.
+Scope:
+- Only what this PR changes (diff + ``Relevant extracted code context``). Do not request refactors of untouched code.
+
+Inline comments (precision):
+- One distinct issue per inline; anchor each to the best single line (or range) using only
+  ``commentable_right_lines`` / ``commentable_left_lines`` and matching ``side``.
+- State what can go wrong (bug, security, wrong output, crash, data loss) and how to fix it.
+- Skip nitpicks, generic praise, and speculative issues you cannot justify from the diff/context.
+- If unsure, omit the comment—false positives hurt more than missing a minor nit.
+
+Coverage (recall)—briefly check changed logic for:
+- **Security / trust**: injection (SQL/XSS/command), secrets in code, authn/authz gaps, unsafe deserialization, ``eval``/``exec``, raw HTML/URL building with user input.
+- **Correctness**: null/undefined handling, async races or missing ``await``, off-by-one, wrong operators, exception handling that swallows errors, incorrect API usage.
+- **Python**: mutable defaults, import cycles, ``==`` vs ``is`` with ``None``, ``requests``/files without timeouts or context managers, typing/contract breaks visible in the diff.
+- **TypeScript/JavaScript**: unsafe ``any``, missing ``await`` on promises, React hooks/deps mistakes, ``JSON.parse`` without try/catch when input is untrusted.
+
+Review outcome:
+- Do not repeat existing comments unless the problem is still present and important.
+- REQUEST_CHANGES only for issues that should block merge (correctness, security, serious maintainability).
+- APPROVE when there are no substantive findings; COMMENT when you leave only minor or educational notes.
 
 PR title: {pr.pr_title}
 PR body:

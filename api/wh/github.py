@@ -14,27 +14,14 @@ from services.github.coder_trigger import (
     resolve_coder_pr_work,
 )
 from services.github.coder_workflow import (
-    ensure_greagent_labels_on_repository,
     prepare_issue_for_coder_work,
     prepare_pr_for_coder_work,
 )
 from services.github.review_trigger import resolve_review_pr_work
-from services.github.review_workflow import (
-    ensure_greagent_review_labels_on_repository,
-    prepare_pr_for_review_work,
-)
+from services.github.review_workflow import prepare_pr_for_review_work
 from services.github.issue_payload import IssueOpenedForCoder
 from services.github.pr_payload import PROpenedForReview
-from services.github.installation_token import get_api_token_for_installation
-from services.github.repository_bootstrap import (
-    ensure_default_coder_repository_agent,
-    ensure_default_review_repository_agent,
-    upsert_repository_from_github,
-)
-from services.github.installation_sync import (
-    complete_installation_for_workspace,
-    sync_repositories_from_webhook_payload,
-)
+from services.github.installation_sync import bind_installation_to_workspace
 from services.user_service import get_organization_for_user
 from services.github.webhook_signature import verify_github_webhook_signature
 from services.github.agent_wallet_gate import (
@@ -43,6 +30,7 @@ from services.github.agent_wallet_gate import (
 )
 from services.wallet import wallet_allows_agent_run
 from task_queue.tasks import (
+    process_github_installation_repo_sync,
     process_github_issue,
     process_github_pr_coder,
     process_github_pr_review,
@@ -82,6 +70,9 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
         account_type,
     )
 
+    ignored: dict[str, Any] | None = None
+    repo_sync_job: tuple[str, int, str | None] | None = None
+
     with session_scope() as session:
         stmt = select(GitHubInstallation).where(
             GitHubInstallation.github_installation_id == installation_id
@@ -109,40 +100,41 @@ def _installation_created(data: dict[str, Any]) -> dict[str, Any]:
                     sender_login,
                     account_login,
                 )
-                return {
+                ignored = {
                     "status": "ignored",
                     "event": "installation",
                     "reason": "unknown_installer",
                     "installation_id": installation_id,
                 }
+            else:
+                account_login_bound = bind_installation_to_workspace(
+                    session,
+                    org=org,
+                    user=user,
+                    installation_id=int(installation_id),
+                )
+                repo_sync_job = (
+                    str(org.id),
+                    int(installation_id),
+                    account_login_bound,
+                )
+        else:
+            existing.account_name = account_login or existing.account_name
+            existing.account_type = account_type or existing.account_type
+            existing.account_avatar_url = account_avatar_url or existing.account_avatar_url
+            existing.permissions = permissions or existing.permissions
 
-            complete_installation_for_workspace(
-                session,
-                org=org,
-                user=user,
-                installation_id=int(installation_id),
-            )
-            session.commit()
-            return {
-                "status": "received",
-                "action": action,
-                "installation_id": installation_id,
-            }
+            if repositories:
+                repo_sync_job = (
+                    str(existing.organization_id),
+                    int(installation_id),
+                    account_login,
+                )
 
-        existing.account_name = account_login or existing.account_name
-        existing.account_type = account_type or existing.account_type
-        existing.account_avatar_url = account_avatar_url or existing.account_avatar_url
-        existing.permissions = permissions or existing.permissions
-
-        if repositories:
-            sync_repositories_from_webhook_payload(
-                session,
-                existing.organization_id,
-                int(installation_id),
-                repositories,
-                account_login,
-            )
-        session.commit()
+    if ignored is not None:
+        return ignored
+    if repo_sync_job is not None:
+        process_github_installation_repo_sync.send(*repo_sync_job)
 
     return {
         "status": "received",
@@ -214,59 +206,28 @@ def _handle_installation_repositories(data: dict[str, Any]) -> dict[str, Any]:
 
     repos_added = data.get("repositories_added") or []
 
-    if action == "added" and repos_added:
+    if action == "added" and repos_added and installation_id is not None:
+        org_id_str: str | None = None
         with session_scope() as session:
             stmt = select(GitHubInstallation).where(
                 GitHubInstallation.github_installation_id == installation_id
             )
             inst = session.execute(stmt).scalar_one_or_none()
             if inst:
-                for repo in repos_added:
-                    try:
-                        row = upsert_repository_from_github(
-                            session,
-                            inst.organization_id,
-                            repo,
-                            account_login_fallback=account_login,
-                        )
-                        ensure_default_coder_repository_agent(session, row)
-                        ensure_default_review_repository_agent(session, row)
-                    except Exception:
-                        logger.exception(
-                            "Failed to upsert repository from installation_repositories: %s",
-                            repo.get("full_name"),
-                        )
+                org_id_str = str(inst.organization_id)
             else:
                 logger.warning(
                     "installation_repositories.added before installation row exists "
                     "(installation_id=%s); callback or installation.created will sync repos",
                     installation_id,
                 )
-
-        try:
-            install_tok = get_api_token_for_installation(int(installation_id))
-        except Exception:
-            install_tok = None
-            logger.exception(
-                "No installation token for labels (installation_id=%s)", installation_id
+        if org_id_str is not None:
+            login_for_sync = account_login if isinstance(account_login, str) else None
+            process_github_installation_repo_sync.send(
+                org_id_str,
+                int(installation_id),
+                login_for_sync,
             )
-        if install_tok:
-            for repo in repos_added:
-                full_name = repo.get("full_name") or ""
-                if "/" not in full_name:
-                    continue
-                owner, name = full_name.split("/", 1)
-                try:
-                    ensure_greagent_labels_on_repository(
-                        owner, name, access_token=install_tok
-                    )
-                    ensure_greagent_review_labels_on_repository(
-                        owner, name, access_token=install_tok
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to ensure greagent labels for %s", full_name
-                    )
 
     return {
         "status": "received",
@@ -522,6 +483,7 @@ async def _handle_pull_request_event(
         "base_branch": work.base_branch,
         "head_branch": work.head_branch,
         "head_sha": work.head_sha,
+        "base_sha": work.base_sha,
         "github_installation_id": work.github_installation_id,
         "github_sender_login": work.github_sender_login,
     }

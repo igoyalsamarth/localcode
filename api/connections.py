@@ -12,7 +12,8 @@ from constants import GITHUB_APP_SLUG
 from db import session_scope
 from model.tables import User, Organization, GitHubInstallation
 from logger import get_logger
-from services.github.installation_sync import complete_installation_for_workspace
+from services.github.installation_sync import bind_installation_to_workspace
+from task_queue.tasks import process_github_installation_repo_sync
 
 logger = get_logger(__name__)
 
@@ -171,18 +172,23 @@ async def github_installation_callback_api(
     """
     with session_scope() as session:
         user, org = require_org_membership(session, user_id, org_id)
-        complete_installation_for_workspace(
+        account_login = bind_installation_to_workspace(
             session,
             org=org,
             user=user,
             installation_id=body.installation_id,
         )
-        session.commit()
+        org_id_str = str(org.id)
         logger.info(
             "GitHub App installed for workspace org=%s installation_id=%s",
             org.name,
             body.installation_id,
         )
+    process_github_installation_repo_sync.send(
+        org_id_str,
+        body.installation_id,
+        account_login,
+    )
     return {"status": "connected"}
 
 

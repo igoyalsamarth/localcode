@@ -91,16 +91,18 @@ def sync_repositories_from_webhook_payload(
         _ensure_labels_for_repositories(installation_id, repositories)
 
 
-def complete_installation_for_workspace(
+def bind_installation_to_workspace(
     session: Session,
     *,
     org: Organization,
     user: User,
     installation_id: int,
-) -> None:
+) -> str:
     """
-    Attach ``installation_id`` to ``org``, refresh account metadata from GitHub,
-    and sync all accessible repositories via the installation token.
+    Persist GitHub installation metadata and attach it to ``org`` (no repository listing).
+
+    Repository upserts and label setup run in a background worker via
+    :func:`sync_installation_repositories_from_github_api` so HTTP handlers stay fast.
     """
     clear_organization_installation_pointers_except(session, installation_id, org.id)
 
@@ -134,6 +136,38 @@ def complete_installation_for_workspace(
 
     org.github_installation_id = installation_id
     session.flush()
+    return str(account_login)
+
+
+def sync_installation_repositories_from_github_api(
+    session: Session,
+    *,
+    organization_id: UUID,
+    installation_id: int,
+    account_login_fallback: str | None,
+) -> None:
+    """
+    List all installation-visible repositories from GitHub, upsert DB rows, ensure agents,
+    then apply GreAgent labels on each repo.
+
+    Intended to run inside a worker session after :func:`bind_installation_to_workspace`
+    has committed.
+    """
+    org = session.get(Organization, organization_id)
+    if org is None:
+        logger.warning(
+            "installation repo sync skipped: organization %s not found",
+            organization_id,
+        )
+        return
+    if org.github_installation_id != installation_id:
+        logger.warning(
+            "installation repo sync skipped: org %s has installation_id=%s (expected %s)",
+            organization_id,
+            org.github_installation_id,
+            installation_id,
+        )
+        return
 
     try:
         repos = list_installation_repositories(installation_id)
@@ -147,9 +181,9 @@ def complete_installation_for_workspace(
         try:
             r = upsert_repository_from_github(
                 session,
-                org.id,
+                organization_id,
                 repo,
-                account_login_fallback=account_login,
+                account_login_fallback=account_login_fallback,
             )
             ensure_default_coder_repository_agent(session, r)
             ensure_default_review_repository_agent(session, r)
@@ -160,3 +194,28 @@ def complete_installation_for_workspace(
             )
     session.flush()
     _ensure_labels_for_repositories(installation_id, repos)
+
+
+def complete_installation_for_workspace(
+    session: Session,
+    *,
+    org: Organization,
+    user: User,
+    installation_id: int,
+) -> None:
+    """
+    Attach ``installation_id`` to ``org`` and synchronously sync all repositories.
+
+    Prefer binding in the API layer and enqueueing
+    :func:`task_queue.tasks.process_github_installation_repo_sync` for large installs;
+    this function remains for tests and one-shot tooling.
+    """
+    account_login = bind_installation_to_workspace(
+        session, org=org, user=user, installation_id=installation_id
+    )
+    sync_installation_repositories_from_github_api(
+        session,
+        organization_id=org.id,
+        installation_id=installation_id,
+        account_login_fallback=account_login,
+    )

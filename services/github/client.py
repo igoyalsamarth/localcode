@@ -158,6 +158,35 @@ def list_pr_review_files(
     return _get_json_paginated_list(url, token)
 
 
+def get_pull_request(owner: str, repo: str, pr_number: int, token: str) -> dict[str, Any]:
+    """Fetch a single pull request (``GET /repos/{owner}/{repo}/pulls/{pr_number}``)."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}"
+    r = requests.get(url, headers=_issue_headers(token), timeout=_DEFAULT_REQUEST_TIMEOUT_SEC)
+    r.raise_for_status()
+    data = r.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("Unexpected pull request API response")
+    return data
+
+
+def compare_commits(
+    owner: str, repo: str, base_sha: str, head_sha: str, token: str
+) -> dict[str, Any]:
+    """
+    Compare two commits (``GET .../compare/{base}...{head}``).
+
+    Used when per-file ``patch`` is omitted on large diffs so the reviewer still receives
+    unified hunks and valid commentable line numbers.
+    """
+    url = f"https://api.github.com/repos/{owner}/{repo}/compare/{base_sha}...{head_sha}"
+    r = requests.get(url, headers=_issue_headers(token), timeout=_DEFAULT_REQUEST_TIMEOUT_SEC)
+    r.raise_for_status()
+    data = r.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("Unexpected compare API response")
+    return data
+
+
 def ensure_repo_label_exists(
     owner: str,
     repo: str,

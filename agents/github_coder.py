@@ -14,6 +14,8 @@ otherwise the local ``LocalShellBackend`` virtual filesystem under ``./workspace
 from __future__ import annotations
 
 import os
+import threading
+from collections.abc import Callable
 
 from deepagents import create_deep_agent
 
@@ -22,6 +24,7 @@ from agents.github_llm import get_github_deep_agent_llm
 from agents.usage_callback import AgentLlmUsageCallbackHandler
 from constants import (
     AGENT_LLM_PROVIDER,
+    DAYTONA_CODER_WALL_CLOCK_SEC,
     git_identity_from_env,
 )
 from logger import get_logger
@@ -50,6 +53,41 @@ from services.github.installation_token import (
 from services.github.issue_payload import IssueOpenedForCoder
 
 logger = get_logger(__name__)
+
+
+def _run_stream_with_daytona_wall_clock(
+    session_holder: list,
+    stream_work: Callable[[], None],
+    *,
+    run_label: str,
+) -> None:
+    """
+    Hard wall-clock limit for the coder sandbox: stop Daytona after N seconds so the
+    sandbox is torn down even if the deep agent stream is still running.
+    """
+    max_sec = DAYTONA_CODER_WALL_CLOCK_SEC
+    if max_sec <= 0:
+        stream_work()
+        return
+
+    def _wall_clock_stop() -> None:
+        sess = session_holder[0] if session_holder else None
+        if sess is None:
+            return
+        logger.warning(
+            "%s: Daytona coder sandbox wall-clock limit (%ss) reached; stopping sandbox",
+            run_label,
+            max_sec,
+        )
+        stop_sandbox(sess)
+
+    timer = threading.Timer(float(max_sec), _wall_clock_stop)
+    timer.daemon = True
+    timer.start()
+    try:
+        stream_work()
+    finally:
+        timer.cancel()
 
 
 _BASE_INSTRUCTIONS = """You are an expert software engineer who implements changes across common stacks.
@@ -192,6 +230,7 @@ Please implement the requested changes:
     }
 
     daytona_session = None
+    session_holder: list = [None]
     try:
         logger.info(
             "GitHub coder using Daytona sandbox (run_id=%s)",
@@ -205,9 +244,19 @@ Please implement the requested changes:
         )
         backend, session = create_daytona_agent_session(run_id, env_vars)
         daytona_session = session
+        session_holder[0] = session
         agent = create_github_coder_agent(backend, system_prompt=system_prompt)
-        stream_deep_agent(agent, prompt, stream_config)
+
+        def _stream_issue() -> None:
+            stream_deep_agent(agent, prompt, stream_config)
+
+        _run_stream_with_daytona_wall_clock(
+            session_holder,
+            _stream_issue,
+            run_label=f"github:{full_name}#issue-{issue.issue_number}",
+        )
     finally:
+        session_holder[0] = None
         llm.callbacks = None
         stop_sandbox(daytona_session)
         record_issue_workflow_usage(
@@ -327,6 +376,7 @@ If there is truly nothing to implement, say so in one PR comment and stop—but 
     os.environ["GH_TOKEN"] = token_value
 
     daytona_session = None
+    session_holder: list = [None]
     try:
         logger.info(
             "GitHub PR coder using Daytona sandbox (run_id=%s)",
@@ -340,9 +390,19 @@ If there is truly nothing to implement, say so in one PR comment and stop—but 
         )
         backend, session = create_daytona_agent_session(run_id, env_vars)
         daytona_session = session
+        session_holder[0] = session
         agent = create_github_coder_agent(backend, system_prompt=system_prompt)
-        stream_deep_agent(agent, prompt, stream_config)
+
+        def _stream_pr() -> None:
+            stream_deep_agent(agent, prompt, stream_config)
+
+        _run_stream_with_daytona_wall_clock(
+            session_holder,
+            _stream_pr,
+            run_label=f"github:{full_name}#pr-{pr.pr_number}",
+        )
     finally:
+        session_holder[0] = None
         llm.callbacks = None
         stop_sandbox(daytona_session)
         record_github_workflow_usage(

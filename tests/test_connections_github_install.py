@@ -61,9 +61,10 @@ class TestConnectionsGitHubInstall:
                 _patched_session_scope(db_session),
             ),
             patch(
-                "api.connections.complete_installation_for_workspace",
-                lambda *a, **k: None,
+                "api.connections.bind_installation_to_workspace",
+                lambda *a, **k: "ghuser3",
             ),
+            patch("api.connections.process_github_installation_repo_sync.send"),
         ):
             r = connections_client.post(
                 "/connections/github/installation/callback",

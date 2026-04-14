@@ -17,6 +17,7 @@ from constants import (
     OLLAMA_API_KEY,
     OLLAMA_BASE_URL,
     OLLAMA_MAX_RETRIES,
+    OLLAMA_REVIEW_TIMEOUT_SEC,
     OLLAMA_TIMEOUT_SEC,
     get_agent_model_name,
 )
@@ -36,5 +37,23 @@ def get_github_deep_agent_llm() -> ChatOllama:
         base_url=OLLAMA_BASE_URL,
         max_retries=OLLAMA_MAX_RETRIES,
         timeout=OLLAMA_TIMEOUT_SEC,
+        client_kwargs=_ollama_client_kwargs(),
+    )
+
+
+@lru_cache(maxsize=1)
+def get_github_review_agent_llm() -> ChatOllama:
+    """
+    LLM for the local PR reviewer (large diff + context prompts).
+
+    Uses a longer timeout than the default deep agent and a low temperature for
+    steadier structured outputs.
+    """
+    return ChatOllama(
+        model=get_agent_model_name(),
+        base_url=OLLAMA_BASE_URL,
+        max_retries=OLLAMA_MAX_RETRIES,
+        timeout=OLLAMA_REVIEW_TIMEOUT_SEC,
+        temperature=0.12,
         client_kwargs=_ollama_client_kwargs(),
     )
