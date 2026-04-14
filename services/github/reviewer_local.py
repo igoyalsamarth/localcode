@@ -17,10 +17,11 @@ import os
 import shutil
 import subprocess
 import tempfile
+from collections import deque
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Collection, Literal
 
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
@@ -43,6 +44,31 @@ logger = get_logger(__name__)
 _MAX_PREVIOUS_COMMENTS = 25
 _MAX_FILE_SNAPSHOT_BYTES = 250_000
 _MAX_REFERENCE_DEPTH = 3
+# Cap tree-sitter work when snapshotting by PR file list + import expansion.
+_MAX_SNAPSHOT_PARSE_FILES = 800
+
+_REPO_SNAPSHOT_SKIP_DIR_NAMES = frozenset(
+    {
+        "node_modules",
+        "bower_components",
+        "__pycache__",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".venv",
+        "venv",
+        ".tox",
+        "dist",
+        "build",
+        ".next",
+        "out",
+        "target",
+        "htmlcov",
+        ".git",
+        "Pods",
+        "DerivedData",
+    }
+)
 
 _IDENTIFIER_NODE_TYPES = (
     "identifier",
@@ -883,29 +909,134 @@ def _parse_file(path: Path, repo_dir: Path) -> ParsedFile:
     )
 
 
-def build_repository_snapshot(repo_dir: Path) -> RepositorySnapshot:
+def _snapshot_path_is_skipped(rel_posix: str) -> bool:
+    return any(part in _REPO_SNAPSHOT_SKIP_DIR_NAMES for part in rel_posix.split("/"))
+
+
+def _append_inventory_entry(
+    inventory: list[dict[str, Any]], parsed: ParsedFile
+) -> None:
+    inventory.append(
+        {
+            "path": parsed.path,
+            "language": parsed.language,
+            "line_count": len(parsed.lines or []),
+            "symbols": parsed.symbol_snapshot,
+        }
+    )
+
+
+def _build_snapshot_from_focus_paths(
+    repo_dir: Path,
+    focus_paths: Collection[str],
+    *,
+    max_parsed_files: int,
+) -> tuple[dict[str, ParsedFile], list[dict[str, Any]]]:
+    """
+    Tree-parse only PR (or seed) paths, then expand across local imports.
+
+    Avoids scanning huge monorepos (e.g. tens of thousands of tree-sitter parses).
+    """
     files: dict[str, ParsedFile] = {}
     inventory: list[dict[str, Any]] = []
-    logger.info("Building repository snapshot for %s", repo_dir)
+    q: deque[str] = deque()
+    seen: set[str] = set()
+    for raw in focus_paths:
+        rel = raw.replace("\\", "/").lstrip("/")
+        if rel and rel not in seen:
+            seen.add(rel)
+            q.append(rel)
 
-    for path in sorted(repo_dir.rglob("*")):
-        if not path.is_file():
+    parsed_count = 0
+    while q and len(files) < max_parsed_files:
+        rel = q.popleft()
+        if _snapshot_path_is_skipped(rel):
             continue
-        if ".git" in path.parts:
+        path = repo_dir / rel
+        if not path.is_file():
             continue
         lower_path = path.name.lower()
         if "lock" in lower_path:
             continue
         parsed = _parse_file(path, repo_dir)
         files[parsed.path] = parsed
-        inventory.append(
-            {
-                "path": parsed.path,
-                "language": parsed.language,
-                "line_count": len(parsed.lines or []),
-                "symbols": parsed.symbol_snapshot,
-            }
+        _append_inventory_entry(inventory, parsed)
+        parsed_count += 1
+        if parsed_count % 50 == 0:
+            logger.info(
+                "Snapshot parse progress: %s files (focus mode, repo=%s)",
+                parsed_count,
+                repo_dir,
+            )
+        for imp in parsed.import_symbols:
+            module = imp.get("module")
+            if not isinstance(module, str) or not module.strip():
+                continue
+            for cand in _local_module_candidates(
+                parsed.path, module, parsed.language
+            ):
+                if cand in seen or _snapshot_path_is_skipped(cand):
+                    continue
+                seen.add(cand)
+                q.append(cand)
+
+    if len(files) >= max_parsed_files and q:
+        logger.warning(
+            "Snapshot parse cap reached (%s files); remaining import queue not drained (repo=%s)",
+            max_parsed_files,
+            repo_dir,
         )
+    return files, inventory
+
+
+def build_repository_snapshot(
+    repo_dir: Path,
+    focus_paths: Collection[str] | None = None,
+    *,
+    max_parsed_files: int = _MAX_SNAPSHOT_PARSE_FILES,
+) -> RepositorySnapshot:
+    files: dict[str, ParsedFile] = {}
+    inventory: list[dict[str, Any]] = []
+    if focus_paths is not None and len(focus_paths) > 0:
+        logger.info(
+            "Building repository snapshot (PR-focused, up to %s files) for %s",
+            max_parsed_files,
+            repo_dir,
+        )
+        files, inventory = _build_snapshot_from_focus_paths(
+            repo_dir, focus_paths, max_parsed_files=max_parsed_files
+        )
+    else:
+        if focus_paths is not None:
+            logger.info(
+                "Building repository snapshot (full scan, no PR paths) for %s",
+                repo_dir,
+            )
+        else:
+            logger.info("Building repository snapshot (full scan) for %s", repo_dir)
+
+        parsed_count = 0
+        for path in sorted(repo_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            if ".git" in path.parts:
+                continue
+            rel = path.relative_to(repo_dir).as_posix()
+            if _snapshot_path_is_skipped(rel):
+                continue
+            lower_path = path.name.lower()
+            if "lock" in lower_path:
+                continue
+            parsed = _parse_file(path, repo_dir)
+            files[parsed.path] = parsed
+            _append_inventory_entry(inventory, parsed)
+            parsed_count += 1
+            if parsed_count % 200 == 0:
+                logger.info(
+                    "Snapshot parse progress: %s files (full scan, repo=%s)",
+                    parsed_count,
+                    repo_dir,
+                )
 
     logger.info("Building symbol index for %s", repo_dir)
     snapshot_path = repo_dir / ".greagent-review-snapshot.json"

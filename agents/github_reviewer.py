@@ -53,12 +53,21 @@ def run_agent_on_pr(
         )
         repo_dir = clone_or_prepare_repo(pr, token_value)
         logger.info("Repo cloned or prepared for %s", pr.pr_number)
-        snapshot = build_repository_snapshot(repo_dir)
-        logger.info("Repository snapshot built for %s", pr.pr_number)
         file_diffs = fetch_pr_file_diffs(
             pr.owner, pr.repo_name, pr.pr_number, token_value
         )
         logger.info("PR file diffs fetched for %s", pr.pr_number)
+        focus_paths: set[str] = set()
+        for diff in file_diffs:
+            if diff.path:
+                focus_paths.add(diff.path.replace("\\", "/"))
+            prev = diff.previous_filename
+            if prev:
+                focus_paths.add(str(prev).replace("\\", "/"))
+        snapshot = build_repository_snapshot(
+            repo_dir, focus_paths if focus_paths else None
+        )
+        logger.info("Repository snapshot built for %s", pr.pr_number)
         relevant_context = collect_relevant_context(snapshot, file_diffs)
         logger.info("Relevant context collected for %s", pr.pr_number)
         previous_comments = fetch_previous_comments(
