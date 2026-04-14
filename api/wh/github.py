@@ -271,7 +271,13 @@ async def _handle_issues_event(
     )
 
     with session_scope() as session:
-        if not wallet_allows_agent_run(session, work.owner, work.repo_name):
+        if not wallet_allows_agent_run(
+            session,
+            work.owner,
+            work.repo_name,
+            github_installation_id=work.github_installation_id,
+            github_repo_id=work.github_repo_id,
+        ):
             logger.info(
                 "Skipping coder enqueue (wallet below $2) for %s#%s",
                 work.full_name,
@@ -350,7 +356,13 @@ async def _handle_pull_request_event(
             coder_work.pr_number,
         )
         with session_scope() as session:
-            if not wallet_allows_agent_run(session, coder_work.owner, coder_work.repo_name):
+            if not wallet_allows_agent_run(
+                session,
+                coder_work.owner,
+                coder_work.repo_name,
+                github_installation_id=coder_work.github_installation_id,
+                github_repo_id=coder_work.github_repo_id,
+            ):
                 logger.info(
                     "Skipping PR coder enqueue (wallet below $2) for %s#%s",
                     coder_work.full_name,
@@ -429,7 +441,13 @@ async def _handle_pull_request_event(
     )
 
     with session_scope() as session:
-        if not wallet_allows_agent_run(session, work.owner, work.repo_name):
+        if not wallet_allows_agent_run(
+            session,
+            work.owner,
+            work.repo_name,
+            github_installation_id=work.github_installation_id,
+            github_repo_id=work.github_repo_id,
+        ):
             logger.info(
                 "Skipping review enqueue (wallet below $2) for %s#%s",
                 work.full_name,

@@ -13,7 +13,7 @@ from decimal import Decimal, ROUND_CEILING
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from model.tables import Organization, Repository
+from model.tables import GitHubInstallation, Organization, Repository
 
 CENT = Decimal("0.01")
 
@@ -38,13 +38,44 @@ def usage_charge_usd_from_llm_cost(llm_cost_usd: Decimal) -> Decimal:
     return max(Decimal("0.05"), rounded)
 
 
-def wallet_allows_agent_run(session: Session, owner: str, repo_name: str) -> bool:
-    """Require a known repo, organization, and spendable balance >= :data:`MIN_WALLET_USD_TO_START_AGENT`."""
-    stmt = select(Repository).where(
-        Repository.owner == owner,
-        Repository.name == repo_name,
-    )
-    repo = session.execute(stmt).scalar_one_or_none()
+def wallet_allows_agent_run(
+    session: Session,
+    owner: str,
+    repo_name: str,
+    *,
+    github_installation_id: int | None = None,
+    github_repo_id: int | None = None,
+) -> bool:
+    """
+    Require a known repo, organization, and spendable balance >= :data:`MIN_WALLET_USD_TO_START_AGENT`.
+
+    ``Repository`` is unique per ``(organization_id, github_repo_id)``, not per ``(owner, name)``,
+    so when the webhook provides ``github_installation_id`` we resolve the row via the
+    installation's organization; otherwise we fall back to owner/name (and optional
+    ``github_repo_id``) with a deterministic single-row limit for legacy callers.
+    """
+    if github_installation_id is not None and github_repo_id is not None:
+        stmt = (
+            select(Repository)
+            .join(
+                GitHubInstallation,
+                GitHubInstallation.organization_id == Repository.organization_id,
+            )
+            .where(
+                GitHubInstallation.github_installation_id == github_installation_id,
+                Repository.github_repo_id == github_repo_id,
+            )
+        )
+        repo = session.execute(stmt).scalar_one_or_none()
+    else:
+        stmt = select(Repository).where(
+            Repository.owner == owner,
+            Repository.name == repo_name,
+        )
+        if github_repo_id is not None:
+            stmt = stmt.where(Repository.github_repo_id == github_repo_id)
+        stmt = stmt.order_by(Repository.created_at.asc()).limit(1)
+        repo = session.execute(stmt).scalars().first()
     if repo is None:
         return False
     org = session.get(Organization, repo.organization_id)

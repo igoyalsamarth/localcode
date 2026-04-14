@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from model.tables import Organization, Repository, User
+from model.tables import GitHubInstallation, Organization, Repository, User
 from services.wallet import (
     MIN_WALLET_USD_TO_START_AGENT,
     credit_organization_wallet_usd,
@@ -173,6 +173,60 @@ class TestWalletAllowsAgentRun:
         db_session.add(repo)
         db_session.commit()
         assert wallet_allows_agent_run(db_session, "op", "rp") is True
+
+    def test_duplicate_owner_name_resolved_by_installation(self, db_session):
+        """Same GitHub slug can exist on multiple org rows; installation picks the billed org."""
+        gh_repo_id = 88_888
+        for i, (email, username, inst_id, balance) in enumerate(
+            [
+                ("dupa@e.com", "dupa", 501, Decimal("5")),
+                ("dupb@e.com", "dupb", 502, Decimal("0")),
+            ]
+        ):
+            user = User(email=email, username=username, auth_provider="github")
+            db_session.add(user)
+            db_session.flush()
+            org = Organization(
+                name=f"O{i}",
+                is_personal=False,
+                created_by_user_id=user.id,
+                owner_user_id=user.id,
+                wallet_balance_usd=balance,
+            )
+            db_session.add(org)
+            db_session.flush()
+            db_session.add(
+                GitHubInstallation(
+                    organization_id=org.id,
+                    github_installation_id=inst_id,
+                    account_name="acct",
+                )
+            )
+            db_session.add(
+                Repository(
+                    organization_id=org.id,
+                    github_repo_id=gh_repo_id,
+                    name="r",
+                    owner="o",
+                    default_branch="main",
+                )
+            )
+        db_session.commit()
+
+        assert wallet_allows_agent_run(
+            db_session,
+            "o",
+            "r",
+            github_installation_id=501,
+            github_repo_id=gh_repo_id,
+        )
+        assert not wallet_allows_agent_run(
+            db_session,
+            "o",
+            "r",
+            github_installation_id=502,
+            github_repo_id=gh_repo_id,
+        )
 
     def test_deduct_from_wallet(self, db_session):
         user = User(email="d@e.com", username="d", auth_provider="github")
