@@ -907,8 +907,10 @@ def build_repository_snapshot(repo_dir: Path) -> RepositorySnapshot:
             }
         )
 
+    logger.info("Building symbol index for %s", repo_dir)
     snapshot_path = repo_dir / ".greagent-review-snapshot.json"
     symbol_index = _build_symbol_index(files)
+    logger.info("Symbol index built for %s", repo_dir)
     snapshot_path.write_text(
         json.dumps(
             {
