@@ -298,9 +298,11 @@ def clone_or_prepare_repo(pr: PROpenedForReview, token: str) -> Path:
             env=env,
         )
     else:
+        logger.info("Updating existing reviewer clone for %s", repo_dir)
         _run_git(["remote", "set-url", "origin", clone_url], cwd=repo_dir, env=env)
-
+    logger.info("Fetching latest changes from origin for %s", repo_dir)
     _run_git(["fetch", "--prune", "origin"], cwd=repo_dir, env=env)
+    logger.info("Fetching PR head branch for %s", repo_dir)
     _run_git(
         [
             "fetch",
@@ -884,6 +886,7 @@ def _parse_file(path: Path, repo_dir: Path) -> ParsedFile:
 def build_repository_snapshot(repo_dir: Path) -> RepositorySnapshot:
     files: dict[str, ParsedFile] = {}
     inventory: list[dict[str, Any]] = []
+    logger.info("Building repository snapshot for %s", repo_dir)
 
     for path in sorted(repo_dir.rglob("*")):
         if not path.is_file():
