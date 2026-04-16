@@ -46,14 +46,15 @@ def get_github_review_agent_llm() -> ChatOllama:
     """
     LLM for the local PR reviewer (large diff + context prompts).
 
-    Uses a longer timeout than the default deep agent and a low temperature for
-    steadier structured outputs.
+    Uses a longer timeout than the default deep agent. Temperature is left at the
+    client default so review behavior stays comparable to other GitHub agents on
+    the same model—an explicit low temperature was hurting recall on structured
+    review outputs in practice.
     """
     return ChatOllama(
         model=get_agent_model_name(),
         base_url=OLLAMA_BASE_URL,
         max_retries=OLLAMA_MAX_RETRIES,
         timeout=OLLAMA_REVIEW_TIMEOUT_SEC,
-        temperature=0.12,
         client_kwargs=_ollama_client_kwargs(),
     )

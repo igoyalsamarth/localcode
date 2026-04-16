@@ -72,7 +72,7 @@ class TestReviewerPayloadParsing:
         assert parsed["review_event"] == "COMMENT"
 
     @patch("services.github.reviewer_local.create_agent")
-    @patch("services.github.reviewer_local.get_github_deep_agent_llm")
+    @patch("services.github.reviewer_local.get_github_review_agent_llm")
     def test_generate_review_decision_uses_structured_output(
         self,
         mock_get_llm,

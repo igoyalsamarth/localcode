@@ -27,7 +27,7 @@ from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from pydantic import BaseModel, Field
 
-from agents.github_llm import get_github_deep_agent_llm
+from agents.github_llm import get_github_review_agent_llm
 from logger import get_logger
 from services.github.client import (
     comment_on_pr,
@@ -247,9 +247,9 @@ class ReviewInlineComment(BaseModel):
     body: str = Field(
         ...,
         description=(
-            "Markdown: one concrete issue per comment—wrong behavior, exploit, crash, or "
-            "data corruption risk—and a specific fix. Skip style, naming, or opinions unless "
-            "they hide a bug."
+            "Markdown: one distinct actionable issue—correctness, security, user-visible "
+            "behavior, reliability, or meaningful maintainability tied to this diff. Explain "
+            "the risk and a concrete fix when practical. Skip pure style or naming preferences."
         ),
     )
     side: Literal["RIGHT", "LEFT"] = Field(
@@ -269,20 +269,20 @@ class ReviewInlineComment(BaseModel):
 class ReviewDecision(BaseModel):
     summary: str = Field(
         ...,
-        description="One or two sentences: only substantive risks or that the diff looks sound.",
+        description="Short human-readable recap of findings, or that the diff looks sound.",
     )
     review_event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"] = "COMMENT"
     review_body: str = Field(
         ...,
-        description="Markdown for the submitted review event: headline, bullets for key findings.",
+        description="Markdown body for the submitted GitHub review (headline + bullets for findings).",
     )
     pr_comment_body: str = Field(
         ...,
-        description="Single PR thread comment: short overview + bullets; no duplicate of every inline.",
+        description="PR conversation comment: overview + bullets; align with inline comments without repeating every anchor.",
     )
     inline_comments: list[ReviewInlineComment] = Field(
         default_factory=list,
-        description="Each item one anchored issue on the diff; empty list if nothing substantive.",
+        description="One anchored inline per distinct issue; empty if you have no actionable findings.",
     )
 
 
@@ -1382,25 +1382,21 @@ def build_review_prompt(
 You are reviewing GitHub pull request #{pr.pr_number} for repository {pr.full_name}.
 
 Scope:
-- Only what this PR changes (diff + ``Relevant extracted code context``). Do not request refactors of untouched code.
+- Focus on what this PR changes (diff + ``Relevant extracted code context``). Do not suggest unrelated refactors of untouched code.
 
-Inline comments (precision):
-- One distinct issue per inline; anchor each to the best single line (or range) using only
-  ``commentable_right_lines`` / ``commentable_left_lines`` and matching ``side``.
-- State what can go wrong (bug, security, wrong output, crash, data loss) and how to fix it.
-- Skip nitpicks, generic praise, and speculative issues you cannot justify from the diff/context.
-- If unsure, omit the comment—false positives hurt more than missing a minor nit.
+Inline comments:
+- One distinct issue per inline; anchor to the best line (or short range) using only
+  ``commentable_right_lines`` / ``commentable_left_lines`` with matching ``side``.
+- Each comment should be actionable: say what can go wrong and how to address it when the fix is clear.
+- Prefer real defects (bugs, security, wrong behavior, reliability, contract/API misuse) grounded in the diff or supplied context. Avoid generic praise, vague worries, and pure style or naming preferences.
 
-Coverage (recall)—briefly check changed logic for:
-- **Security / trust**: injection (SQL/XSS/command), secrets in code, authn/authz gaps, unsafe deserialization, ``eval``/``exec``, raw HTML/URL building with user input.
-- **Correctness**: null/undefined handling, async races or missing ``await``, off-by-one, wrong operators, exception handling that swallows errors, incorrect API usage.
-- **Python**: mutable defaults, import cycles, ``==`` vs ``is`` with ``None``, ``requests``/files without timeouts or context managers, typing/contract breaks visible in the diff.
-- **TypeScript/JavaScript**: unsafe ``any``, missing ``await`` on promises, React hooks/deps mistakes, ``JSON.parse`` without try/catch when input is untrusted.
+Coverage:
+- Before finishing, skim changed logic for common problems you can tie to this diff: validation/auth gaps, boundary/off-by-one mistakes, async/races or missing ``await``, error handling that hides failures, resource leaks, injection or unsafe deserialization, incorrect API usage, and similar issues. Include medium-severity problems when they are plausible, not only catastrophic cases.
 
 Review outcome:
-- Do not repeat existing comments unless the problem is still present and important.
-- REQUEST_CHANGES only for issues that should block merge (correctness, security, serious maintainability).
-- APPROVE when there are no substantive findings; COMMENT when you leave only minor or educational notes.
+- Do not repeat existing comments unless the issue still applies and matters.
+- Use REQUEST_CHANGES only for issues that should block merge (correctness, security, serious defects).
+- Use APPROVE when there are no material findings; use COMMENT for non-blocking feedback.
 
 PR title: {pr.pr_title}
 PR body:
@@ -1433,7 +1429,7 @@ def generate_review_decision(
         previous_comments,
     )
     agent = create_agent(
-        model=get_github_deep_agent_llm(),
+        model=get_github_review_agent_llm(),
         tools=[],
         response_format=ToolStrategy(ReviewDecision),
     )
