@@ -20,6 +20,7 @@ from logger import get_logger
 from model.enums import GitHubWorkflowKind
 from model.tables import (
     AgentWorkflowUsage,
+    GitHubInstallation,
     Model,
     Organization,
     Repository,
@@ -87,14 +88,65 @@ def _compute_llm_cost_usd_and_catalog_model(
     return total, first
 
 
-def _resolve_repo_by_owner_name(
-    session, owner: str, repo_name: str
+def _resolve_repository(
+    session,
+    owner: str,
+    repo_name: str,
+    *,
+    github_repo_id: int | None = None,
+    github_installation_id: int | None = None,
 ) -> tuple[UUID | None, UUID | None]:
-    stmt = select(Repository).where(
-        Repository.owner == owner,
-        Repository.name == repo_name,
+    """
+    Map a GitHub repo to our ``Repository`` row.
+
+    ``owner``/``name`` are not unique across organizations, so callers should pass
+    ``github_repo_id`` (and ideally ``github_installation_id``) from the webhook when
+    available.
+    """
+    # Definitive: installation belongs to exactly one org; (org, github_repo_id) is unique.
+    if github_installation_id is not None and github_repo_id is not None:
+        stmt = (
+            select(Repository)
+            .join(Organization, Repository.organization_id == Organization.id)
+            .join(
+                GitHubInstallation,
+                GitHubInstallation.organization_id == Organization.id,
+            )
+            .where(
+                GitHubInstallation.github_installation_id == github_installation_id,
+                Repository.github_repo_id == github_repo_id,
+            )
+        )
+        repo = session.scalars(stmt).first()
+        if repo is not None:
+            return repo.id, repo.organization_id
+
+    # Same GitHub repo can exist under multiple org rows; pick one deterministically.
+    if github_repo_id is not None:
+        stmt = (
+            select(Repository)
+            .where(
+                Repository.github_repo_id == github_repo_id,
+                Repository.owner == owner,
+                Repository.name == repo_name,
+            )
+            .order_by(Repository.created_at.asc())
+            .limit(1)
+        )
+        repo = session.scalars(stmt).first()
+        if repo is not None:
+            return repo.id, repo.organization_id
+
+    stmt = (
+        select(Repository)
+        .where(
+            Repository.owner == owner,
+            Repository.name == repo_name,
+        )
+        .order_by(Repository.created_at.asc())
+        .limit(1)
     )
-    repo = session.execute(stmt).scalar_one_or_none()
+    repo = session.scalars(stmt).first()
     if repo is None:
         return None, None
     return repo.id, repo.organization_id
@@ -105,10 +157,19 @@ def _resolve_trigger_user_id(
     owner: str,
     repo_name: str,
     sender_login: str | None,
+    *,
+    github_repo_id: int | None = None,
+    github_installation_id: int | None = None,
 ) -> UUID | None:
     if not sender_login or not sender_login.strip():
         return None
-    repo_id, org_id = _resolve_repo_by_owner_name(session, owner, repo_name)
+    repo_id, org_id = _resolve_repository(
+        session,
+        owner,
+        repo_name,
+        github_repo_id=github_repo_id,
+        github_installation_id=github_installation_id,
+    )
     if org_id is None:
         return None
     user = session.execute(
@@ -133,6 +194,8 @@ def record_github_workflow_usage(
     usage_cb: AgentLlmUsageCallbackHandler,
     provider: str,
     github_sender_login: str | None = None,
+    github_repo_id: int | None = None,
+    github_installation_id: int | None = None,
 ) -> None:
     """
     Insert one ``AgentWorkflowUsage`` row after an agent run.
@@ -146,9 +209,20 @@ def record_github_workflow_usage(
 
     try:
         with session_scope() as session:
-            repo_id, org_id = _resolve_repo_by_owner_name(session, owner, repo_name)
+            repo_id, org_id = _resolve_repository(
+                session,
+                owner,
+                repo_name,
+                github_repo_id=github_repo_id,
+                github_installation_id=github_installation_id,
+            )
             trigger_uid = _resolve_trigger_user_id(
-                session, owner, repo_name, github_sender_login
+                session,
+                owner,
+                repo_name,
+                github_sender_login,
+                github_repo_id=github_repo_id,
+                github_installation_id=github_installation_id,
             )
             llm_cost_usd, catalog_model = _compute_llm_cost_usd_and_catalog_model(
                 session, provider, raw
@@ -217,6 +291,8 @@ def record_issue_workflow_usage(
         usage_cb=usage_cb,
         provider=provider,
         github_sender_login=issue.github_sender_login,
+        github_repo_id=issue.github_repo_id,
+        github_installation_id=issue.github_installation_id,
     )
 
 
@@ -237,4 +313,6 @@ def record_pr_workflow_usage(
         usage_cb=usage_cb,
         provider=provider,
         github_sender_login=pr.github_sender_login,
+        github_repo_id=pr.github_repo_id,
+        github_installation_id=pr.github_installation_id,
     )

@@ -9,7 +9,14 @@ from sqlalchemy import select
 
 from agents.usage_callback import AgentLlmUsageCallbackHandler
 from model.enums import GitHubWorkflowKind
-from model.tables import AgentWorkflowUsage, Model, Organization, Repository, User
+from model.tables import (
+    AgentWorkflowUsage,
+    GitHubInstallation,
+    Model,
+    Organization,
+    Repository,
+    User,
+)
 from services.github.issue_payload import IssueOpenedForCoder
 from services.github.workflow_usage import record_issue_workflow_usage
 
@@ -101,3 +108,94 @@ class TestWorkflowUsageRecord:
         assert row.run_id == "github:o/r#issue-9"
         db_session.refresh(org)
         assert org.wallet_balance_usd == Decimal("-22.04")
+
+    def test_duplicate_owner_name_resolves_via_installation_id(self, db_session):
+        """Two orgs can each store the same GitHub repo; slug lookup must not crash."""
+        u1 = User(email="a@e.com", username="a", auth_provider="github")
+        u2 = User(email="b@e.com", username="b", auth_provider="github")
+        db_session.add_all([u1, u2])
+        db_session.flush()
+        org_a = Organization(
+            name="A",
+            is_personal=False,
+            created_by_user_id=u1.id,
+            owner_user_id=u1.id,
+        )
+        org_b = Organization(
+            name="B",
+            is_personal=False,
+            created_by_user_id=u2.id,
+            owner_user_id=u2.id,
+        )
+        db_session.add_all([org_a, org_b])
+        db_session.flush()
+        db_session.add_all(
+            [
+                GitHubInstallation(
+                    organization_id=org_a.id,
+                    github_installation_id=9000,
+                    account_name="a",
+                ),
+                GitHubInstallation(
+                    organization_id=org_b.id,
+                    github_installation_id=9001,
+                    account_name="b",
+                ),
+            ]
+        )
+        repo_a = Repository(
+            organization_id=org_a.id,
+            github_repo_id=424242,
+            name="sentry",
+            owner="getsentry",
+            default_branch="main",
+        )
+        repo_b = Repository(
+            organization_id=org_b.id,
+            github_repo_id=424242,
+            name="sentry",
+            owner="getsentry",
+            default_branch="main",
+        )
+        db_session.add_all([repo_a, repo_b])
+        m = Model(
+            provider="ollama",
+            name="m1",
+            input_cost_per_token=Decimal("0"),
+            output_cost_per_token=Decimal("0"),
+        )
+        db_session.add(m)
+        db_session.commit()
+
+        issue = IssueOpenedForCoder(
+            owner="getsentry",
+            repo_name="sentry",
+            full_name="getsentry/sentry",
+            repo_url="https://github.com/getsentry/sentry",
+            github_repo_id=424242,
+            issue_number=1,
+            issue_title="t",
+            issue_body="",
+            github_installation_id=9001,
+        )
+        cb = AgentLlmUsageCallbackHandler()
+        cb.usage_metadata["m1"] = {"input_tokens": 1, "output_tokens": 0, "total_tokens": 1}
+
+        with patch(
+            "services.github.workflow_usage.session_scope",
+            self._fake_session_scope(db_session),
+        ):
+            record_issue_workflow_usage(
+                issue,
+                "github:getsentry/sentry#issue-1",
+                cb,
+                provider="ollama",
+            )
+
+        row = db_session.execute(select(AgentWorkflowUsage)).scalar_one()
+        assert row.organization_id == org_b.id
+        assert row.repository_id == repo_b.id
+        db_session.refresh(org_a)
+        db_session.refresh(org_b)
+        assert org_a.wallet_balance_usd == Decimal("0")
+        assert org_b.wallet_balance_usd < Decimal("0")

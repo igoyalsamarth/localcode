@@ -184,15 +184,31 @@ def _sync_org_installation_id_from_webhook(
     """If the DB has a different installation id than the webhook, update the org row."""
     try:
         with session_scope() as session:
+            # Installation id is globally unique in ``github_installations`` — prefer this
+            # over slug matching, which can hit multiple orgs for the same owner/repo name.
             stmt = (
                 select(Organization)
-                .join(Repository, Repository.organization_id == Organization.id)
+                .join(
+                    GitHubInstallation,
+                    GitHubInstallation.organization_id == Organization.id,
+                )
                 .where(
-                    Repository.owner == owner,
-                    Repository.name == repo_name,
+                    GitHubInstallation.github_installation_id == webhook_installation_id,
                 )
             )
-            org = session.execute(stmt).scalar_one_or_none()
+            org = session.scalars(stmt).first()
+            if org is None:
+                stmt = (
+                    select(Organization)
+                    .join(Repository, Repository.organization_id == Organization.id)
+                    .where(
+                        Repository.owner == owner,
+                        Repository.name == repo_name,
+                    )
+                    .order_by(Organization.id)
+                    .limit(1)
+                )
+                org = session.scalars(stmt).first()
             if org is None:
                 return
             if org.github_installation_id == webhook_installation_id:
@@ -222,8 +238,10 @@ def get_github_installation_id_for_repo(owner: str, repo_name: str) -> int | Non
                 Repository.owner == owner,
                 Repository.name == repo_name,
             )
+            .order_by(Organization.id)
+            .limit(1)
         )
-        org = session.execute(stmt).scalar_one_or_none()
+        org = session.scalars(stmt).first()
         if not org:
             return None
         if org.github_installation_id is not None:

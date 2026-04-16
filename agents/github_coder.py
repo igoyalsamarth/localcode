@@ -415,4 +415,6 @@ If there is truly nothing to implement, say so in one PR comment and stop—but 
             usage_cb=usage_cb,
             provider=AGENT_LLM_PROVIDER,
             github_sender_login=pr.github_sender_login,
+            github_repo_id=pr.github_repo_id,
+            github_installation_id=pr.github_installation_id,
         )
