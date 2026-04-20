@@ -12,6 +12,7 @@ from services.github.reviewer_local import (
     ReviewDecision,
     ReviewInlineComment,
     _extract_json_payload,
+    _is_test_file,
     build_repository_snapshot,
     build_review_prompt,
     collect_relevant_context,
@@ -136,10 +137,44 @@ class TestReviewerPayloadParsing:
         assert "Repository symbol snapshot" not in prompt
         assert "Relevant extracted code context" in prompt
         assert '"code": "def foo():\\n    return 1"' in prompt
-        assert '"name": "foo"' not in prompt
+        # Name is now included for better context understanding
+        assert '"name": "foo"' in prompt
+        # These metadata fields should still be excluded
         assert '"line_range"' not in prompt
         assert '"calls"' not in prompt
         assert '"imports_used"' not in prompt
+
+    def test_build_review_prompt_includes_decorators_for_tests(self):
+        pr = _sample_pr()
+        prompt = build_review_prompt(
+            pr,
+            [
+                PullRequestFileDiff(
+                    path="test_a.py",
+                    status="modified",
+                    patch="@@ -1,1 +1,1 @@\n-old\n+new\n",
+                    previous_filename=None,
+                    language="python",
+                    hunks=parse_patch("@@ -1,1 +1,1 @@\n-old\n+new\n"),
+                )
+            ],
+            [
+                {
+                    "kind": "repo_context",
+                    "path": "test_a.py",
+                    "name": "test_something",
+                    "decorators": ["@mock.patch('time.sleep')", "@pytest.fixture"],
+                    "code": "def test_something():\n    pass",
+                }
+            ],
+            {"issue_comments": [], "review_comments": []},
+        )
+
+        assert "Relevant extracted code context" in prompt
+        assert '"decorators"' in prompt
+        assert '@mock.patch' in prompt
+        assert '@pytest.fixture' in prompt
+        assert "Test-specific guidance" in prompt
 
 
 @pytest.mark.unit
@@ -346,6 +381,130 @@ class TestRepositorySnapshot:
             and piece.get("path") == "db/db.go"
             for piece in context
         )
+
+
+@pytest.mark.unit
+class TestTestFileDetection:
+    def test_is_test_file_detects_python_test_files(self):
+        assert _is_test_file("test_foo.py")
+        assert _is_test_file("tests/test_bar.py")
+        assert _is_test_file("src/foo_test.py")
+        assert _is_test_file("tests/conftest.py")
+
+    def test_is_test_file_detects_javascript_test_files(self):
+        assert _is_test_file("component.spec.js")
+        assert _is_test_file("component.spec.ts")
+        assert _is_test_file("__tests__/component.test.js")
+
+    def test_is_test_file_rejects_non_test_files(self):
+        assert not _is_test_file("src/utils.py")
+        assert not _is_test_file("main.py")
+        assert not _is_test_file("components/Button.tsx")
+
+
+@pytest.mark.unit
+class TestCollectRelevantContextEnhancements:
+    def test_collect_context_extracts_full_modified_functions(self, tmp_path):
+        """Test that we extract complete functions that are modified, not just added lines."""
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        (repo_dir / "module.py").write_text(
+            "def helper():\n"
+            "    return 'helper'\n\n"
+            "def main_function():\n"
+            "    # Line 5\n"
+            "    result = helper()\n"
+            "    # Line 7\n"
+            "    return result\n",
+            encoding="utf-8",
+        )
+
+        snapshot = build_repository_snapshot(repo_dir)
+        # Modify line 7 (context line in middle of function)
+        diffs = [
+            PullRequestFileDiff(
+                path="module.py",
+                status="modified",
+                patch=(
+                    "@@ -4,4 +4,5 @@\n"
+                    " def main_function():\n"
+                    "     # Line 5\n"
+                    "     result = helper()\n"
+                    "+    # Added comment\n"
+                    "     # Line 7\n"
+                    "     return result\n"
+                ),
+                previous_filename=None,
+                language="python",
+                hunks=parse_patch(
+                    "@@ -4,4 +4,5 @@\n"
+                    " def main_function():\n"
+                    "     # Line 5\n"
+                    "     result = helper()\n"
+                    "+    # Added comment\n"
+                    "     # Line 7\n"
+                    "     return result\n"
+                ),
+            )
+        ]
+
+        context = collect_relevant_context(snapshot, diffs)
+
+        # Should extract the full main_function context
+        main_func_context = [
+            piece for piece in context
+            if piece.get("kind") == "repo_context" and piece.get("name") == "main_function"
+        ]
+        assert len(main_func_context) > 0, "Should extract main_function context"
+        assert "helper()" in main_func_context[0].get("code", ""), "Should have full function body"
+
+    def test_collect_context_extracts_test_imports_for_test_files(self, tmp_path):
+        """Test that test imports are extracted for test files."""
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        (repo_dir / "test_module.py").write_text(
+            "import pytest\n"
+            "from unittest import mock\n\n"
+            "def test_something():\n"
+            "    pass\n",
+            encoding="utf-8",
+        )
+
+        snapshot = build_repository_snapshot(repo_dir)
+        diffs = [
+            PullRequestFileDiff(
+                path="test_module.py",
+                status="modified",
+                patch=(
+                    "@@ -3,2 +3,3 @@\n"
+                    " \n"
+                    " def test_something():\n"
+                    "+    assert True\n"
+                    "     pass\n"
+                ),
+                previous_filename=None,
+                language="python",
+                hunks=parse_patch(
+                    "@@ -3,2 +3,3 @@\n"
+                    " \n"
+                    " def test_something():\n"
+                    "+    assert True\n"
+                    "     pass\n"
+                ),
+            )
+        ]
+
+        context = collect_relevant_context(snapshot, diffs)
+
+        # Should extract test_imports
+        test_imports = [
+            piece for piece in context
+            if piece.get("kind") == "test_imports"
+        ]
+        assert len(test_imports) > 0, "Should extract test imports"
+        imports_code = test_imports[0].get("code", "")
+        assert "import pytest" in imports_code
+        assert "from unittest import mock" in imports_code
 
 
 @pytest.mark.unit
