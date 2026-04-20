@@ -25,7 +25,7 @@ OLLAMA_REVIEW_TIMEOUT_SEC = int(os.environ.get("OLLAMA_REVIEW_TIMEOUT_SEC", "300
 
 def get_agent_model_name() -> str:
     """Default / configured LLM id for GitHub deep agents (``MODEL`` env)."""
-    return os.environ.get("MODEL", "glm5.1:cloud")
+    return os.environ.get("MODEL", "glm-5.1:cloud")
 
 
 def default_catalog_model_spec() -> tuple[str, str, Decimal, Decimal]:

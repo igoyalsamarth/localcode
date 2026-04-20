@@ -33,7 +33,7 @@ class TestConstants:
         """Test default agent model name."""
         with patch.dict(os.environ, {}, clear=True):
             model = get_agent_model_name()
-            assert model == "glm5.1:cloud"
+            assert model == "glm-5.1:cloud"
 
     def test_get_agent_model_name_custom(self):
         """Test custom model name from env."""
@@ -45,12 +45,12 @@ class TestConstants:
         """Default catalog row matches GLM-5.1-class pricing and MODEL/provider env."""
         with patch.dict(
             os.environ,
-            {"MODEL": "glm5.1:cloud", "AGENT_LLM_PROVIDER": "ollama"},
+            {"MODEL": "glm-5.1:cloud", "AGENT_LLM_PROVIDER": "ollama"},
             clear=True,
         ):
             prov, name, inp, out = default_catalog_model_spec()
             assert prov == "ollama"
-            assert name == "glm5.1:cloud"
+            assert name == "glm-5.1:cloud"
             assert inp == Decimal("1.40") / Decimal(1_000_000)
             assert out == Decimal("4.40") / Decimal(1_000_000)
 
