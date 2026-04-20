@@ -35,7 +35,7 @@ class TestRepositoryBootstrap:
 
         assert model is not None
         assert model.provider == "ollama"
-        assert model.name == "glm-5.1:cloud"
+        assert model.name == "glm-5:cloud"
         assert model.input_cost_per_token == Decimal("1.40") / Decimal(1_000_000)
         assert model.output_cost_per_token == Decimal("4.40") / Decimal(1_000_000)
 

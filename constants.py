@@ -6,7 +6,7 @@ load_dotenv()
 
 _MILLION = Decimal(1_000_000)
 # Default GitHub agent LLM (see MODEL). Priced per million tokens (matches catalog per-token rates).
-# GLM-5.1 (Z.AI) cloud defaults: $1.40 / 1M input, $4.40 / 1M output (see ``models`` table).
+# GLM-5 (Z.AI) cloud defaults: $1.40 / 1M input, $4.40 / 1M output (see ``models`` table).
 _DEFAULT_LLM_INPUT_USD_PER_MILLION = Decimal("1.40")
 _DEFAULT_LLM_OUTPUT_USD_PER_MILLION = Decimal("4.40")
 
@@ -25,7 +25,7 @@ OLLAMA_REVIEW_TIMEOUT_SEC = int(os.environ.get("OLLAMA_REVIEW_TIMEOUT_SEC", "300
 
 def get_agent_model_name() -> str:
     """Default / configured LLM id for GitHub deep agents (``MODEL`` env)."""
-    return os.environ.get("MODEL", "glm-5.1:cloud")
+    return os.environ.get("MODEL", "glm-5:cloud")
 
 
 def default_catalog_model_spec() -> tuple[str, str, Decimal, Decimal]:
