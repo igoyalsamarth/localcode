@@ -6,9 +6,9 @@ load_dotenv()
 
 _MILLION = Decimal(1_000_000)
 # Default GitHub agent LLM (see MODEL). Priced per million tokens (matches catalog per-token rates).
-# MiniMax M2.7 cloud defaults: $0.30 / 1M input, $1.20 / 1M output (see ``models`` table).
-_DEFAULT_LLM_INPUT_USD_PER_MILLION = Decimal("0.30")
-_DEFAULT_LLM_OUTPUT_USD_PER_MILLION = Decimal("1.20")
+# GLM-5.1 (Z.AI) cloud defaults: $1.40 / 1M input, $4.40 / 1M output (see ``models`` table).
+_DEFAULT_LLM_INPUT_USD_PER_MILLION = Decimal("1.40")
+_DEFAULT_LLM_OUTPUT_USD_PER_MILLION = Decimal("4.40")
 
 # LLM billing provider string stored on usage rows (Ollama, OpenAI, etc.)
 AGENT_LLM_PROVIDER = os.environ.get("AGENT_LLM_PROVIDER", "ollama")
@@ -25,7 +25,7 @@ OLLAMA_REVIEW_TIMEOUT_SEC = int(os.environ.get("OLLAMA_REVIEW_TIMEOUT_SEC", "300
 
 def get_agent_model_name() -> str:
     """Default / configured LLM id for GitHub deep agents (``MODEL`` env)."""
-    return os.environ.get("MODEL", "minimax-m2.7:cloud")
+    return os.environ.get("MODEL", "glm5.1:cloud")
 
 
 def default_catalog_model_spec() -> tuple[str, str, Decimal, Decimal]:
@@ -33,7 +33,7 @@ def default_catalog_model_spec() -> tuple[str, str, Decimal, Decimal]:
     Provider, model id, and per-token USD rates for a new ``models`` catalog row.
 
     Aligns with :func:`get_agent_model_name` and :data:`AGENT_LLM_PROVIDER` so usage
-    keys match. Rates: $0.30 / 1M input, $1.20 / 1M output (stored per token).
+    keys match. Rates: $1.40 / 1M input, $4.40 / 1M output (stored per token).
     """
     inp = _DEFAULT_LLM_INPUT_USD_PER_MILLION / _MILLION
     out = _DEFAULT_LLM_OUTPUT_USD_PER_MILLION / _MILLION
