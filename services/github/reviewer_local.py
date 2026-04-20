@@ -169,6 +169,15 @@ class DiffHunk:
         ]
 
     @property
+    def modified_new_lines(self) -> list[int]:
+        """Return all new lines that are part of modifications (adds + context around changes)."""
+        return [
+            line.new_line
+            for line in self.lines
+            if line.kind in ("context", "add") and line.new_line
+        ]
+
+    @property
     def right_commentable_lines(self) -> list[int]:
         return [
             line.new_line
@@ -503,6 +512,31 @@ def _extract_call_symbol(
     }
 
 
+def _extract_decorators(node: Any, source: bytes) -> list[str]:
+    """Extract decorators from a function/class node (Python specific)."""
+    decorators = []
+    # In tree-sitter Python, decorators are siblings that come before the function
+    parent = getattr(node, "parent", None)
+    if parent is None:
+        return decorators
+    
+    children = getattr(parent, "named_children", [])
+    for i, child in enumerate(children):
+        if child == node:
+            # Look backwards for decorator nodes
+            for j in range(i - 1, -1, -1):
+                child_type = getattr(children[j], "type", None)
+                if child_type == "decorator":
+                    decorator_text = _node_text(source, children[j]).strip()
+                    decorators.insert(0, decorator_text)
+                elif child_type not in ("comment", "string"):
+                    # Stop if we hit something that's not a decorator or comment
+                    break
+            break
+    
+    return decorators
+
+
 def _extract_function_symbol(
     language: str | None, node: Any, source: bytes
 ) -> dict[str, Any]:
@@ -510,6 +544,12 @@ def _extract_function_symbol(
     name = _extract_symbol_name(language, node, source)
     code = _node_text(source, node).strip()
     identifiers = _dedupe_keep_order(_collect_identifier_texts(node, source))
+    
+    # Extract decorators (mainly for Python)
+    decorators = []
+    if language == "python":
+        decorators = _extract_decorators(node, source)
+    
     symbol = {
         "name": name,
         "code": code,
@@ -517,6 +557,7 @@ def _extract_function_symbol(
         "calls": [],
         "imports_used": [],
         "identifiers": identifiers,
+        "decorators": decorators,
     }
     return symbol
 
@@ -601,6 +642,7 @@ def _build_symbol_snapshot(symbols: dict[str, list[dict[str, Any]]]) -> dict[str
                 "line_range": symbol.get("line_range"),
                 "calls": symbol.get("calls", []),
                 "imports_used": symbol.get("imports_used", []),
+                "decorators": symbol.get("decorators", []),
                 "code": symbol.get("code"),
             }
             for symbol in symbols["functions"]
@@ -1188,6 +1230,100 @@ def _symbol_for_line(
     return None
 
 
+def _is_test_file(path: str) -> bool:
+    """Check if a file is a test file based on naming conventions."""
+    path_lower = path.lower()
+    path_parts = Path(path).parts
+    
+    # Check file name patterns
+    filename = Path(path).name.lower()
+    if filename.startswith("test_") or filename.endswith("_test.py") or filename.endswith("_test.js"):
+        return True
+    
+    # Check if in test directory
+    if "test" in path_parts or "tests" in path_parts or "__tests__" in path_parts:
+        return True
+    
+    # Check spec files (JavaScript/TypeScript)
+    if filename.endswith(".spec.ts") or filename.endswith(".spec.js"):
+        return True
+    
+    return False
+
+
+def _extract_test_context(
+    snapshot: RepositorySnapshot,
+    parsed: ParsedFile,
+    modified_function_names: set[str],
+) -> list[dict[str, Any]]:
+    """Extract test-specific context: fixtures, decorators, and conftest."""
+    context = []
+    
+    # Extract pytest fixtures defined in the file
+    for func in parsed.function_symbols:
+        decorators = func.get("decorators", [])
+        func_name = func.get("name", "")
+        
+        # Skip if this is one of the modified functions (will be added separately)
+        if func_name in modified_function_names:
+            continue
+        
+        # Look for pytest fixtures
+        is_fixture = any("pytest.fixture" in dec or "@fixture" in dec for dec in decorators)
+        if is_fixture:
+            context.append({
+                "kind": "pytest_fixture",
+                "path": parsed.path,
+                "language": parsed.language,
+                "name": func_name,
+                "decorators": decorators,
+                "code": func.get("code", "")[:1500],  # Truncate to save tokens
+                "line_range": func.get("line_range"),
+            })
+    
+    # Extract module-level imports to show mock.patch and other test utilities
+    if parsed.import_symbols:
+        imports_code = "\n".join(imp.get("code", "") for imp in parsed.import_symbols[:20])
+        if imports_code.strip():
+            context.append({
+                "kind": "test_imports",
+                "path": parsed.path,
+                "language": parsed.language,
+                "code": imports_code,
+            })
+    
+    # Look for conftest.py in the same directory
+    conftest_path = Path(parsed.path).parent / "conftest.py"
+    conftest_str = str(conftest_path)
+    if conftest_str in snapshot.files:
+        conftest_parsed = snapshot.files[conftest_str]
+        # Extract fixtures from conftest
+        for func in conftest_parsed.function_symbols[:5]:  # Limit to first 5
+            decorators = func.get("decorators", [])
+            is_fixture = any("pytest.fixture" in dec or "@fixture" in dec for dec in decorators)
+            if is_fixture:
+                context.append({
+                    "kind": "conftest_fixture",
+                    "path": conftest_str,
+                    "language": conftest_parsed.language,
+                    "name": func.get("name"),
+                    "decorators": decorators,
+                    "code": func.get("code", "")[:1000],
+                    "line_range": func.get("line_range"),
+                })
+    
+    return context
+
+
+def _get_all_modified_lines(file_diff: PullRequestFileDiff) -> set[int]:
+    """Get all line numbers that are modified (added or in context of changes)."""
+    modified = set()
+    for hunk in file_diff.hunks:
+        # Include added lines and some context lines around them
+        modified.update(hunk.modified_new_lines)
+    return modified
+
+
 def _context_piece_from_symbol(
     *,
     kind: str,
@@ -1211,6 +1347,10 @@ def _context_piece_from_symbol(
     if symbol_type == "function":
         payload["calls"] = symbol.get("calls", [])
         payload["imports_used"] = symbol.get("imports_used", [])
+        # Include decorators if present (important for test files)
+        decorators = symbol.get("decorators", [])
+        if decorators:
+            payload["decorators"] = decorators
     return payload
 
 
@@ -1234,6 +1374,8 @@ def collect_relevant_context(
 
     for file_diff in file_diffs:
         parsed = snapshot.files.get(file_diff.path)
+        is_test = _is_test_file(file_diff.path)
+        
         for hunk in file_diff.hunks:
             new_code = hunk.new_code()
             old_code = hunk.old_code()
@@ -1261,11 +1403,42 @@ def collect_relevant_context(
 
             if not parsed or not parsed.lines:
                 continue
-            for line_number in hunk.added_new_lines[:8]:
+            
+            # ENHANCEMENT #1: Extract FULL context for ALL modified lines (not just added)
+            # Get all modified lines (added + context lines)
+            all_modified_lines = set(hunk.modified_new_lines)
+            
+            # Collect symbols that contain ANY modified line
+            modified_symbols: set[tuple[str, int]] = set()  # (symbol_type, index)
+            for line_number in all_modified_lines:
                 match = _symbol_for_line(parsed, line_number)
-                if not match:
-                    continue
-                symbol_type, symbol = match
+                if match:
+                    symbol_type, symbol = match
+                    symbol_index = (
+                        parsed.function_symbols.index(symbol)
+                        if symbol_type == "function" and symbol in parsed.function_symbols
+                        else parsed.class_symbols.index(symbol)
+                    )
+                    modified_symbols.add((symbol_type, symbol_index))
+            
+            # Extract context for all modified symbols (limit to prevent token explosion)
+            modified_function_names = set()
+            for symbol_type, symbol_index in list(modified_symbols)[:12]:  # Increased from 8 to 12
+                if symbol_type == "function":
+                    symbol = parsed.function_symbols[symbol_index]
+                else:
+                    symbol = parsed.class_symbols[symbol_index]
+                
+                modified_function_names.add(symbol.get("name", ""))
+                
+                # Find the first modified line in this symbol for focus
+                symbol_start, symbol_end = symbol.get("line_range", [0, 0])
+                focus_line = None
+                for line_num in sorted(all_modified_lines):
+                    if symbol_start <= line_num <= symbol_end:
+                        focus_line = line_num
+                        break
+                
                 add_piece(
                     _context_piece_from_symbol(
                         kind="repo_context",
@@ -1273,9 +1446,11 @@ def collect_relevant_context(
                         language=parsed.language,
                         symbol_type=symbol_type,
                         symbol=symbol,
-                        focus_line=line_number,
+                        focus_line=focus_line,
                     )
                 )
+                
+                # For functions, also resolve imports and calls
                 if symbol_type == "function":
                     for imported_name in symbol.get("imports_used", []):
                         for reference in _resolve_import_reference(
@@ -1291,6 +1466,17 @@ def collect_relevant_context(
                             call_name,
                         ):
                             add_piece(reference)
+        
+        # ENHANCEMENT #2: Extract test-specific context for test files
+        if is_test and parsed:
+            test_context = _extract_test_context(
+                snapshot,
+                parsed,
+                modified_function_names,
+            )
+            for piece in test_context:
+                add_piece(piece)
+    
     return pieces
 
 
@@ -1333,20 +1519,33 @@ def _llm_context_payload(
     """
     Keep only minimal context for the LLM: code plus lightweight file anchors.
     Drop symbol metadata (names, ranges, calls, imports, nested symbol trees).
+    Keep decorators as they are critical for understanding test behavior.
     """
     payload: list[dict[str, Any]] = []
     for piece in relevant_context:
         code = str(piece.get("code") or "").strip()
         if not code:
             continue
-        payload.append(
-            {
-                "kind": piece.get("kind"),
-                "path": piece.get("path"),
-                "hunk_header": piece.get("hunk_header"),
-                "code": code,
-            }
-        )
+        
+        llm_piece = {
+            "kind": piece.get("kind"),
+            "path": piece.get("path"),
+            "hunk_header": piece.get("hunk_header"),
+            "code": code,
+        }
+        
+        # Keep decorators for test files (critical context)
+        decorators = piece.get("decorators")
+        if decorators:
+            llm_piece["decorators"] = decorators
+        
+        # Keep name for better context understanding
+        name = piece.get("name")
+        if name:
+            llm_piece["name"] = name
+        
+        payload.append(llm_piece)
+    
     return payload
 
 
@@ -1392,6 +1591,11 @@ Inline comments:
 
 Coverage:
 - Before finishing, skim changed logic for common problems you can tie to this diff: validation/auth gaps, boundary/off-by-one mistakes, async/races or missing ``await``, error handling that hides failures, resource leaks, injection or unsafe deserialization, incorrect API usage, and similar issues. Include medium-severity problems when they are plausible, not only catastrophic cases.
+
+Test-specific guidance:
+- For test files, pay attention to ``decorators`` field showing @mock.patch, @pytest.fixture, etc. These affect test behavior.
+- Check if mocked/patched functions are actually being used correctly in the test body.
+- Look for issues like: monkeypatched time.sleep that makes actual sleep calls no-ops, isinstance checks that fail due to multiprocessing contexts (spawn/fork create subclass instances), fixed sleeps vs condition waits for reliability.
 
 Review outcome:
 - Do not repeat existing comments unless the issue still applies and matters.
