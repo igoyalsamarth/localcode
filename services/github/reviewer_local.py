@@ -1700,6 +1700,7 @@ def generate_review_decision(
         tools=[],
         response_format=ToolStrategy(ReviewDecision),
     )
+    print(user_message)
     result = agent.invoke(
         {
             "messages": [
