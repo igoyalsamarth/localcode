@@ -11,6 +11,7 @@ from services.github.reviewer_local import (
     PullRequestFileDiff,
     ReviewDecision,
     ReviewInlineComment,
+    _GITHUB_REVIEW_SYSTEM_MESSAGE,
     _extract_json_payload,
     _is_test_file,
     build_review_user_message,
@@ -87,13 +88,10 @@ class TestReviewerPayloadParsing:
         assert parsed["review_event"] == "COMMENT"
 
     @patch("services.github.reviewer_local.create_agent")
-    @patch("services.github.reviewer_local.get_github_review_agent_llm")
     def test_generate_review_decision_uses_structured_output(
         self,
-        mock_get_llm,
         mock_create_agent,
     ):
-        mock_get_llm.return_value = Mock()
         agent = Mock()
         mock_create_agent.return_value = agent
         agent.invoke.return_value = {
@@ -114,11 +112,12 @@ class TestReviewerPayloadParsing:
 
         assert mock_create_agent.call_count == 1
         kwargs = mock_create_agent.call_args.kwargs
+        assert kwargs["system_prompt"] == _GITHUB_REVIEW_SYSTEM_MESSAGE
         assert kwargs["response_format"].schema is ReviewDecision
         agent.invoke.assert_called_once()
         invoke_in = agent.invoke.call_args[0][0]
-        assert invoke_in["messages"][0]["role"] == "system"
-        assert invoke_in["messages"][1]["role"] == "user"
+        assert len(invoke_in["messages"]) == 1
+        assert invoke_in["messages"][0]["role"] == "user"
         assert decision.summary == "ok"
 
     def test_build_review_user_message_excludes_repository_snapshot(self):

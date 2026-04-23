@@ -27,7 +27,7 @@ from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from pydantic import BaseModel, Field
 
-from agents.github_llm import get_github_review_agent_llm
+from constants import AGENT_LLM_PROVIDER, get_agent_model_name
 from logger import get_logger
 from services.github.client import (
     comment_on_pr,
@@ -1696,18 +1696,12 @@ def generate_review_decision(
         previous_comments,
     )
     agent = create_agent(
-        model=get_github_review_agent_llm(),
-        tools=[],
+        model=f"{AGENT_LLM_PROVIDER}:{get_agent_model_name()}",
+        system_prompt=_GITHUB_REVIEW_SYSTEM_MESSAGE,
         response_format=ToolStrategy(ReviewDecision),
     )
-    print(user_message)
     result = agent.invoke(
-        {
-            "messages": [
-                {"role": "system", "content": _GITHUB_REVIEW_SYSTEM_MESSAGE},
-                {"role": "user", "content": user_message},
-            ]
-        }
+        {"messages": [{"role": "user", "content": user_message}]},
     )
     structured = result.get("structured_response")
     if structured is None:

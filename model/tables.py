@@ -338,7 +338,7 @@ class AgentWorkflowUsage(Base):
             "row ``id`` is unique per execution."
         ),
     )
-    provider: Mapped[str] = mapped_column(String(64), nullable=False, default="ollama")
+    provider: Mapped[str] = mapped_column(String(64), nullable=False, default="openai")
     model_name: Mapped[str] = mapped_column(
         String(256),
         nullable=False,
