@@ -1659,6 +1659,7 @@ def generate_review_decision(
         tools=[],
         response_format=ToolStrategy(ReviewDecision),
     )
+    print(prompt)
     result = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
     structured = result.get("structured_response")
     if structured is None:
