@@ -178,6 +178,31 @@ class DiffHunk:
         ]
 
     @property
+    def new_file_lines_for_repo_context(self) -> list[int]:
+        """
+        New-file line numbers that should drive symbol / repo context extraction.
+
+        Unlike :meth:`modified_new_lines`, this **excludes** pure context lines that
+        only appear in the hunk to show surrounding unchanged code. Those lines often
+        map to large enclosing scopes in the AST and pull in unrelated code.
+
+        Includes: every added line, and the first new-file line that follows each
+        deletion (so delete-only hunks can still resolve symbols on the new side).
+        """
+        out: set[int] = set()
+        for i, line in enumerate(self.lines):
+            if line.kind == "add" and line.new_line is not None:
+                out.add(line.new_line)
+            if line.kind != "del":
+                continue
+            for j in range(i + 1, len(self.lines)):
+                n = self.lines[j]
+                if n.new_line is not None and n.kind in ("add", "context"):
+                    out.add(n.new_line)
+                    break
+        return sorted(out)
+
+    @property
     def right_commentable_lines(self) -> list[int]:
         return [
             line.new_line
@@ -263,7 +288,9 @@ class ReviewInlineComment(BaseModel):
     )
     side: Literal["RIGHT", "LEFT"] = Field(
         "RIGHT",
-        description="Diff side: 'RIGHT' for head branch, 'LEFT' for base branch.",
+        description=(
+            "Always 'RIGHT' here: anchor to head branch lines listed in ``commentable_right_lines``."
+        ),
     )
     start_line: int | None = Field(
         None,
@@ -1329,13 +1356,25 @@ def _extract_test_context(
     return context
 
 
-def _get_all_modified_lines(file_diff: PullRequestFileDiff) -> set[int]:
-    """Get all line numbers that are modified (added or in context of changes)."""
-    modified = set()
-    for hunk in file_diff.hunks:
-        # Include added lines and some context lines around them
-        modified.update(hunk.modified_new_lines)
-    return modified
+def _line_in_any_import_block(parsed: ParsedFile, line_number: int) -> bool:
+    for imp in parsed.import_symbols:
+        lr = imp.get("line_range") or [0, 0]
+        if (
+            isinstance(lr, list)
+            and len(lr) >= 2
+            and int(lr[0]) <= line_number <= int(lr[1])
+        ):
+            return True
+    return False
+
+
+def _all_triggers_are_import_only(
+    parsed: ParsedFile, line_numbers: Collection[int]
+) -> bool:
+    """True when every line is inside a tree-sitter import block (imports-only hunk)."""
+    if not line_numbers:
+        return False
+    return all(_line_in_any_import_block(parsed, ln) for ln in line_numbers)
 
 
 def _context_piece_from_symbol(
@@ -1368,11 +1407,18 @@ def _context_piece_from_symbol(
     return payload
 
 
-def collect_relevant_context(
+def build_review_file_blocks(
     snapshot: RepositorySnapshot,
     file_diffs: list[PullRequestFileDiff],
 ) -> list[dict[str, Any]]:
-    pieces: list[dict[str, Any]] = []
+    """
+    One JSON-serializable block per file: each hunk has the two-sided hunk text,
+    per-hunk commentable line lists, and ``extra_context`` (repo/imports/calls) for
+    that hunk. The hunk text is not repeated under ``kind: diff_new``/``diff_old``;
+    those go only in ``right_code`` and optional ``left_code`` to match the final
+    prompt the model sees.
+    """
+    out: list[dict[str, Any]] = []
     seen_keys: set[tuple[str, str, str | None]] = set()
 
     def add_piece(piece: dict[str, Any]) -> None:
@@ -1384,117 +1430,112 @@ def collect_relevant_context(
         if key in seen_keys:
             return
         seen_keys.add(key)
-        pieces.append(piece)
+        extra_by_hunk.append(piece)
 
     for file_diff in file_diffs:
         parsed = snapshot.files.get(file_diff.path)
         is_test = _is_test_file(file_diff.path)
+        modified_function_names: set[str] = set()
+        hunks_serialized: list[dict[str, Any]] = []
 
         for hunk in file_diff.hunks:
+            extra_by_hunk: list[dict[str, Any]] = []
             new_code = hunk.new_code()
             old_code = hunk.old_code()
-            add_piece(
-                {
-                    "kind": "diff_new",
-                    "path": file_diff.path,
-                    "language": file_diff.language,
-                    "hunk_header": hunk.header,
-                    "code": new_code,
-                    "symbols": _snapshot_from_code(file_diff.language, new_code),
-                }
-            )
+
+            if parsed and parsed.lines:
+                symbol_triggers = set(hunk.new_file_lines_for_repo_context)
+                skip_class_and_function_repo = _all_triggers_are_import_only(
+                    parsed, symbol_triggers
+                )
+
+                if not skip_class_and_function_repo and symbol_triggers:
+                    modified_symbols: set[tuple[str, int]] = set()
+                    for line_number in symbol_triggers:
+                        match = _symbol_for_line(parsed, line_number)
+                        if not match:
+                            continue
+                        symbol_type, symbol = match
+                        try:
+                            symbol_index = (
+                                parsed.function_symbols.index(symbol)
+                                if symbol_type == "function"
+                                and symbol in parsed.function_symbols
+                                else parsed.class_symbols.index(symbol)
+                            )
+                        except ValueError:
+                            continue
+                        modified_symbols.add((symbol_type, symbol_index))
+
+                    for symbol_type, symbol_index in list(modified_symbols)[:12]:
+                        if symbol_type == "function":
+                            symbol = parsed.function_symbols[symbol_index]
+                        else:
+                            symbol = parsed.class_symbols[symbol_index]
+
+                        modified_function_names.add(str(symbol.get("name") or ""))
+
+                        symbol_start, symbol_end = symbol.get("line_range", [0, 0])
+                        focus_line = None
+                        for line_num in sorted(symbol_triggers):
+                            if symbol_start <= line_num <= symbol_end:
+                                focus_line = line_num
+                                break
+
+                        add_piece(
+                            _context_piece_from_symbol(
+                                kind="repo_context",
+                                path=file_diff.path,
+                                language=parsed.language,
+                                symbol_type=symbol_type,
+                                symbol=symbol,
+                                focus_line=focus_line,
+                            )
+                        )
+
+                        if symbol_type == "function":
+                            for imported_name in symbol.get("imports_used", []):
+                                for reference in _resolve_import_reference(
+                                    snapshot,
+                                    parsed,
+                                    imported_name,
+                                ):
+                                    add_piece(reference)
+                            for call_name in symbol.get("calls", []):
+                                for reference in _resolve_call_reference(
+                                    snapshot,
+                                    parsed,
+                                    call_name,
+                                ):
+                                    add_piece(reference)
+
+            llm_hunk: dict[str, Any] = {
+                "hunk_header": hunk.header,
+                "right_code": new_code,
+                "commentable_right_lines": sorted(
+                    {ln for ln in hunk.right_commentable_lines if ln is not None}
+                ),
+                "extra_context": _llm_context_payload(extra_by_hunk),
+            }
             if old_code != new_code:
-                add_piece(
-                    {
-                        "kind": "diff_old",
-                        "path": file_diff.path,
-                        "language": file_diff.language,
-                        "hunk_header": hunk.header,
-                        "code": old_code,
-                        "symbols": _snapshot_from_code(file_diff.language, old_code),
-                    }
-                )
+                llm_hunk["left_code"] = old_code
+            hunks_serialized.append(llm_hunk)
 
-            if not parsed or not parsed.lines:
-                continue
-
-            # ENHANCEMENT #1: Extract FULL context for ALL modified lines (not just added)
-            # Get all modified lines (added + context lines)
-            all_modified_lines = set(hunk.modified_new_lines)
-
-            # Collect symbols that contain ANY modified line
-            modified_symbols: set[tuple[str, int]] = set()  # (symbol_type, index)
-            for line_number in all_modified_lines:
-                match = _symbol_for_line(parsed, line_number)
-                if match:
-                    symbol_type, symbol = match
-                    symbol_index = (
-                        parsed.function_symbols.index(symbol)
-                        if symbol_type == "function"
-                        and symbol in parsed.function_symbols
-                        else parsed.class_symbols.index(symbol)
-                    )
-                    modified_symbols.add((symbol_type, symbol_index))
-
-            # Extract context for all modified symbols (limit to prevent token explosion)
-            modified_function_names = set()
-            for symbol_type, symbol_index in list(modified_symbols)[
-                :12
-            ]:  # Increased from 8 to 12
-                if symbol_type == "function":
-                    symbol = parsed.function_symbols[symbol_index]
-                else:
-                    symbol = parsed.class_symbols[symbol_index]
-
-                modified_function_names.add(symbol.get("name", ""))
-
-                # Find the first modified line in this symbol for focus
-                symbol_start, symbol_end = symbol.get("line_range", [0, 0])
-                focus_line = None
-                for line_num in sorted(all_modified_lines):
-                    if symbol_start <= line_num <= symbol_end:
-                        focus_line = line_num
-                        break
-
-                add_piece(
-                    _context_piece_from_symbol(
-                        kind="repo_context",
-                        path=file_diff.path,
-                        language=parsed.language,
-                        symbol_type=symbol_type,
-                        symbol=symbol,
-                        focus_line=focus_line,
-                    )
-                )
-
-                # For functions, also resolve imports and calls
-                if symbol_type == "function":
-                    for imported_name in symbol.get("imports_used", []):
-                        for reference in _resolve_import_reference(
-                            snapshot,
-                            parsed,
-                            imported_name,
-                        ):
-                            add_piece(reference)
-                    for call_name in symbol.get("calls", []):
-                        for reference in _resolve_call_reference(
-                            snapshot,
-                            parsed,
-                            call_name,
-                        ):
-                            add_piece(reference)
-
-        # ENHANCEMENT #2: Extract test-specific context for test files
+        file_block: dict[str, Any] = {
+            "path": file_diff.path,
+            "status": file_diff.status,
+            "language": file_diff.language,
+            "hunks": hunks_serialized,
+        }
         if is_test and parsed:
             test_context = _extract_test_context(
-                snapshot,
-                parsed,
-                modified_function_names,
+                snapshot, parsed, modified_function_names
             )
-            for piece in test_context:
-                add_piece(piece)
-
-    return pieces
+            as_llm = _llm_context_payload(test_context)
+            if as_llm:
+                file_block["file_level_context"] = as_llm
+        out.append(file_block)
+    return out
 
 
 def _truncate_comment_payload(comment: dict[str, Any]) -> dict[str, Any]:
@@ -1576,38 +1617,23 @@ def _extract_json_payload(text: str) -> dict[str, Any]:
     return json.loads(payload)
 
 
-def build_review_prompt(
-    pr: PROpenedForReview,
-    file_diffs: list[PullRequestFileDiff],
-    relevant_context: list[dict[str, Any]],
-    previous_comments: dict[str, list[dict[str, Any]]],
-) -> str:
-    diff_payload = [
-        {
-            "path": file_diff.path,
-            "status": file_diff.status,
-            "language": file_diff.language,
-            "commentable_right_lines": sorted(file_diff.right_commentable_lines),
-            "commentable_left_lines": sorted(file_diff.left_commentable_lines),
-            "patch": file_diff.patch,
-        }
-        for file_diff in file_diffs
-    ]
-    llm_context_payload = _llm_context_payload(relevant_context)
-    return f"""
-You are reviewing GitHub pull request #{pr.pr_number} for repository {pr.full_name}.
+# Stable instructions: paired with a user message that contains the specific PR and diffs.
+_GITHUB_REVIEW_SYSTEM_MESSAGE = """
+You are a code reviewer for GitHub pull requests. The user message contains one PR: repository, number, title, body, base/head branches, changed file blocks (JSON), and prior comments (JSON). Produce the structured response required by the tool (summary, review_event, review_body, pr_comment_body, inline_comments).
 
 Scope:
-- Focus on what this PR changes (diff + ``Relevant extracted code context``). Do not suggest unrelated refactors of untouched code.
+- Focus on what this PR changes: each file entry has ``hunks``; each hunk has ``right_code`` (and ``left_code`` when the base differed) plus optional ``extra_context`` and optional ``file_level_context`` (tests). Do not suggest unrelated refactors of untouched code.
+- Review the hunk diffs first, then use ``extra_context`` / ``file_level_context`` to reason about call sites, types, and tests.
+
 First review the diff purely, before using the context to guide your review.
-Take a first pass at the diff, and raise issues around categories.
+Take a first pass at the diff, and raise issues around categories:
 - Shell safety
 - Validation misuse
 - Access control bugs
 
 Inline comments:
 - One distinct issue per inline; anchor to the best line (or short range) using only
-  ``commentable_right_lines`` / ``commentable_left_lines`` with matching ``side``.
+  ``commentable_right_lines`` in the *same* hunk as the change, with ``side`` ``RIGHT`` (``right_code`` / head branch). Do not use ``LEFT``/base side for inline review comments.
 - Each comment should be actionable: say what can go wrong and how to address it when the fix is clear.
 - Prefer real defects (bugs, security, wrong behavior, reliability, contract/API misuse) grounded in the diff or supplied context. Avoid generic praise, vague worries, and pure style or naming preferences.
 
@@ -1623,35 +1649,50 @@ Review outcome:
 - Do not repeat existing comments unless the issue still applies and matters.
 - Use REQUEST_CHANGES only for issues that should block merge (correctness, security, serious defects).
 - Use APPROVE when there are no material findings; use COMMENT for non-blocking feedback.
+""".strip()
 
-PR title: {pr.pr_title}
-PR body:
+
+def build_review_user_message(
+    pr: PROpenedForReview,
+    review_file_blocks: list[dict[str, Any]],
+    previous_comments: dict[str, list[dict[str, Any]]],
+) -> str:
+    """PR-specific input: metadata plus JSON for changed files and prior comments."""
+    return f"""# Pull request to review
+
+- **Repository:** {pr.full_name}
+- **PR number:** {pr.pr_number}
+- **Base branch:** {pr.base_branch}
+- **Head branch:** {pr.head_branch}
+
+## Title
+{pr.pr_title}
+
+## Description
 {pr.pr_body or "(No description provided)"}
 
-Base branch: {pr.base_branch}
-Head branch: {pr.head_branch}
+## Changed files
+Per hunk: diff text (``right_code`` / optional ``left_code``), ``commentable_right_lines``, and ``extra_context`` (no full-file patch duplicate). Optional per-file ``file_level_context`` for tests.
 
-Changed file diffs:
-{json.dumps(diff_payload, indent=2)}
+```json
+{json.dumps(review_file_blocks, indent=2)}
+```
 
-Relevant extracted code context:
-{json.dumps(llm_context_payload, indent=2)}
-
-Existing PR comments:
+## Existing PR comments
+```json
 {json.dumps(previous_comments, indent=2)}
+```
 """.strip()
 
 
 def generate_review_decision(
     pr: PROpenedForReview,
-    file_diffs: list[PullRequestFileDiff],
-    relevant_context: list[dict[str, Any]],
+    review_file_blocks: list[dict[str, Any]],
     previous_comments: dict[str, list[dict[str, Any]]],
 ) -> ReviewDecision:
-    prompt = build_review_prompt(
+    user_message = build_review_user_message(
         pr,
-        file_diffs,
-        relevant_context,
+        review_file_blocks,
         previous_comments,
     )
     agent = create_agent(
@@ -1659,8 +1700,14 @@ def generate_review_decision(
         tools=[],
         response_format=ToolStrategy(ReviewDecision),
     )
-    print(prompt)
-    result = agent.invoke({"messages": [{"role": "user", "content": prompt}]})
+    result = agent.invoke(
+        {
+            "messages": [
+                {"role": "system", "content": _GITHUB_REVIEW_SYSTEM_MESSAGE},
+                {"role": "user", "content": user_message},
+            ]
+        }
+    )
     structured = result.get("structured_response")
     if structured is None:
         raise RuntimeError("Missing structured_response from reviewer output")

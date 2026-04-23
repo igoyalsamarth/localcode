@@ -13,7 +13,7 @@ from services.github.reviewer_local import (
     ReviewInlineComment,
     _extract_json_payload,
     _is_test_file,
-    build_review_prompt,
+    build_review_user_message,
     generate_review_decision,
     parse_patch,
     publish_review,
@@ -57,6 +57,22 @@ class TestParsePatch:
         assert 10 in hunk.right_commentable_lines
         assert 10 in hunk.left_commentable_lines
 
+    def test_new_file_lines_for_repo_context_ignores_unchanged_context(self):
+        """Import-style hunks: only added lines should drive symbol extraction."""
+        patch = """@@ -1,3 +1,4 @@
+ import a
++import zod
+ import b
+ import c
+"""
+        hunks = parse_patch(patch)
+        assert len(hunks) == 1
+        hunk = hunks[0]
+        assert hunk.added_new_lines == [2]
+        assert hunk.new_file_lines_for_repo_context == [2]
+        # modified_new_lines would include 1,3,4,5 (all context+add) — not used for context
+        assert set(hunk.modified_new_lines) == {1, 2, 3, 4}
+
 
 @pytest.mark.unit
 class TestReviewerPayloadParsing:
@@ -93,7 +109,6 @@ class TestReviewerPayloadParsing:
         decision = generate_review_decision(
             _sample_pr(),
             [],
-            [],
             {"issue_comments": [], "review_comments": []},
         )
 
@@ -101,78 +116,92 @@ class TestReviewerPayloadParsing:
         kwargs = mock_create_agent.call_args.kwargs
         assert kwargs["response_format"].schema is ReviewDecision
         agent.invoke.assert_called_once()
+        invoke_in = agent.invoke.call_args[0][0]
+        assert invoke_in["messages"][0]["role"] == "system"
+        assert invoke_in["messages"][1]["role"] == "user"
         assert decision.summary == "ok"
 
-    def test_build_review_prompt_excludes_repository_snapshot(self):
+    def test_build_review_user_message_excludes_repository_snapshot(self):
         pr = _sample_pr()
-        prompt = build_review_prompt(
-            pr,
-            [
-                PullRequestFileDiff(
-                    path="a.py",
-                    status="modified",
-                    patch="@@ -1,1 +1,1 @@\n-old\n+new\n",
-                    previous_filename=None,
-                    language="python",
-                    hunks=parse_patch("@@ -1,1 +1,1 @@\n-old\n+new\n"),
-                )
-            ],
-            [
-                {
-                    "kind": "repo_context",
-                    "path": "a.py",
-                    "name": "foo",
-                    "line_range": [3, 4],
-                    "calls": ["bar"],
-                    "imports_used": ["Request"],
-                    "code": "def foo():\n    return 1",
-                }
-            ],
-            {"issue_comments": [], "review_comments": []},
+        review_blocks = [
+            {
+                "path": "a.py",
+                "status": "modified",
+                "language": "python",
+                "hunks": [
+                    {
+                        "hunk_header": "@@ -1,1 +1,1 @@",
+                        "right_code": "new",
+                        "left_code": "old",
+                        "commentable_right_lines": [1],
+                        "extra_context": [
+                            {
+                                "kind": "repo_context",
+                                "path": "a.py",
+                                "hunk_header": None,
+                                "name": "foo",
+                                "code": "def foo():\n    return 1",
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+        user = build_review_user_message(
+            pr, review_blocks, {"issue_comments": [], "review_comments": []}
         )
 
-        assert "Repository snapshot JSON path" not in prompt
-        assert "Repository symbol snapshot" not in prompt
-        assert "Relevant extracted code context" in prompt
-        assert '"code": "def foo():\\n    return 1"' in prompt
-        # Name is now included for better context understanding
-        assert '"name": "foo"' in prompt
-        # These metadata fields should still be excluded
-        assert '"line_range"' not in prompt
-        assert '"calls"' not in prompt
-        assert '"imports_used"' not in prompt
+        assert "Repository snapshot JSON path" not in user
+        assert "Repository symbol snapshot" not in user
+        assert "Changed files" in user
+        assert "extra_context" in user
+        assert '"code": "def foo():\\n    return 1"' in user
+        assert '"name": "foo"' in user
+        assert '"line_range"' not in user
+        assert '"calls"' not in user
+        assert '"imports_used"' not in user
 
-    def test_build_review_prompt_includes_decorators_for_tests(self):
+    def test_build_review_user_message_includes_decorators_for_tests(self):
         pr = _sample_pr()
-        prompt = build_review_prompt(
-            pr,
-            [
-                PullRequestFileDiff(
-                    path="test_a.py",
-                    status="modified",
-                    patch="@@ -1,1 +1,1 @@\n-old\n+new\n",
-                    previous_filename=None,
-                    language="python",
-                    hunks=parse_patch("@@ -1,1 +1,1 @@\n-old\n+new\n"),
-                )
-            ],
-            [
-                {
-                    "kind": "repo_context",
-                    "path": "test_a.py",
-                    "name": "test_something",
-                    "decorators": ["@mock.patch('time.sleep')", "@pytest.fixture"],
-                    "code": "def test_something():\n    pass",
-                }
-            ],
-            {"issue_comments": [], "review_comments": []},
+        review_blocks = [
+            {
+                "path": "test_a.py",
+                "status": "modified",
+                "language": "python",
+                "hunks": [
+                    {
+                        "hunk_header": "@@ -1,1 +1,1 @@",
+                        "right_code": "new",
+                        "left_code": "old",
+                        "commentable_right_lines": [1],
+                        "extra_context": [],
+                    }
+                ],
+                "file_level_context": [
+                    {
+                        "kind": "repo_context",
+                        "path": "test_a.py",
+                        "hunk_header": None,
+                        "name": "test_something",
+                        "code": "def test_something():\n    pass",
+                        "decorators": [
+                            "@mock.patch('time.sleep')",
+                            "@pytest.fixture",
+                        ],
+                    }
+                ],
+            }
+        ]
+        user = build_review_user_message(
+            pr, review_blocks, {"issue_comments": [], "review_comments": []}
         )
 
-        assert "Relevant extracted code context" in prompt
-        assert '"decorators"' in prompt
-        assert '@mock.patch' in prompt
-        assert '@pytest.fixture' in prompt
-        assert "Test-specific guidance" in prompt
+        assert "Changed files" in user
+        assert "file_level_context" in user
+        assert '"decorators"' in user
+        assert "@mock.patch" in user
+        assert "@pytest.fixture" in user
+        assert "o/r" in user
 
 
 @pytest.mark.unit
@@ -252,7 +281,7 @@ class TestRunAgentOnPr:
     @patch("agents.github_reviewer.publish_review")
     @patch("agents.github_reviewer.generate_review_decision")
     @patch("agents.github_reviewer.fetch_previous_comments")
-    @patch("agents.github_reviewer.collect_relevant_context")
+    @patch("agents.github_reviewer.build_review_file_blocks")
     @patch("agents.github_reviewer.fetch_pr_file_diffs")
     @patch("agents.github_reviewer.build_repository_snapshot")
     @patch("agents.github_reviewer.clone_or_prepare_repo")
@@ -263,7 +292,7 @@ class TestRunAgentOnPr:
         mock_clone,
         mock_snapshot,
         mock_fetch_diffs,
-        mock_collect_context,
+        mock_file_blocks,
         mock_fetch_comments,
         mock_generate,
         mock_publish,
@@ -277,7 +306,7 @@ class TestRunAgentOnPr:
         mock_clone.return_value = Path("/tmp/repo")
         mock_snapshot.return_value = Mock()
         mock_fetch_diffs.return_value = []
-        mock_collect_context.return_value = []
+        mock_file_blocks.return_value = []
         mock_fetch_comments.return_value = {"issue_comments": [], "review_comments": []}
         mock_generate.return_value = ReviewDecision(
             summary="ok",
@@ -292,7 +321,7 @@ class TestRunAgentOnPr:
         mock_clone.assert_called_once_with(pr, "tok")
         mock_snapshot.assert_called_once()
         mock_fetch_diffs.assert_called_once_with(pr.owner, pr.repo_name, pr.pr_number, "tok")
-        mock_collect_context.assert_called_once()
+        mock_file_blocks.assert_called_once()
         mock_fetch_comments.assert_called_once_with(pr.owner, pr.repo_name, pr.pr_number, "tok")
         mock_generate.assert_called_once()
         mock_publish.assert_called_once_with(pr, "tok", mock_generate.return_value, [])

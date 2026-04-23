@@ -8,8 +8,8 @@ from constants import AGENT_LLM_PROVIDER
 from logger import get_logger
 from services.github.reviewer_local import (
     build_repository_snapshot,
+    build_review_file_blocks,
     clone_or_prepare_repo,
-    collect_relevant_context,
     fetch_previous_comments,
     fetch_pr_file_diffs,
     generate_review_decision,
@@ -68,8 +68,8 @@ def run_agent_on_pr(
             repo_dir, focus_paths if focus_paths else None
         )
         logger.info("Repository snapshot built for %s", pr.pr_number)
-        relevant_context = collect_relevant_context(snapshot, file_diffs)
-        logger.info("Relevant context collected for %s", pr.pr_number)
+        review_file_blocks = build_review_file_blocks(snapshot, file_diffs)
+        logger.info("Review file blocks built for %s", pr.pr_number)
         previous_comments = fetch_previous_comments(
             pr.owner,
             pr.repo_name,
@@ -79,8 +79,7 @@ def run_agent_on_pr(
         logger.info("Previous comments fetched for %s", pr.pr_number)
         decision = generate_review_decision(
             pr,
-            file_diffs,
-            relevant_context,
+            review_file_blocks,
             previous_comments,
         )
         logger.info("Review decision generated for %s", pr.pr_number)
