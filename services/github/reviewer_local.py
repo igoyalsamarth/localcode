@@ -138,19 +138,6 @@ _LANGUAGE_BY_SUFFIX = {
     ".sql": "sql",
 }
 
-# Environment/config files that should be recognized but don't have a language parser
-_CONFIG_FILE_NAMES = frozenset(
-    {
-        ".env",
-        ".env.example",
-        ".env.local",
-        ".env.production",
-        ".env.development",
-        ".envrc",
-        ".env.sample",
-    }
-)
-
 
 @dataclass
 class DiffLine:
@@ -309,15 +296,7 @@ class ReviewDecision(BaseModel):
 
 
 def detect_language(path: str) -> str | None:
-    suffix = Path(path).suffix.lower()
-    language = _LANGUAGE_BY_SUFFIX.get(suffix)
-    if language:
-        return language
-    # Check for config files like .env (no suffix)
-    filename = Path(path).name.lower()
-    if filename in _CONFIG_FILE_NAMES or filename.startswith(".env"):
-        return "env"
-    return None
+    return _LANGUAGE_BY_SUFFIX.get(Path(path).suffix.lower())
 
 
 def _run_git(
@@ -540,7 +519,7 @@ def _extract_decorators(node: Any, source: bytes) -> list[str]:
     parent = getattr(node, "parent", None)
     if parent is None:
         return decorators
-
+    
     children = getattr(parent, "named_children", [])
     for i, child in enumerate(children):
         if child == node:
@@ -554,7 +533,7 @@ def _extract_decorators(node: Any, source: bytes) -> list[str]:
                     # Stop if we hit something that's not a decorator or comment
                     break
             break
-
+    
     return decorators
 
 
@@ -565,12 +544,12 @@ def _extract_function_symbol(
     name = _extract_symbol_name(language, node, source)
     code = _node_text(source, node).strip()
     identifiers = _dedupe_keep_order(_collect_identifier_texts(node, source))
-
+    
     # Extract decorators (mainly for Python)
     decorators = []
     if language == "python":
         decorators = _extract_decorators(node, source)
-
+    
     symbol = {
         "name": name,
         "code": code,
@@ -1052,7 +1031,9 @@ def _build_snapshot_from_focus_paths(
             module = imp.get("module")
             if not isinstance(module, str) or not module.strip():
                 continue
-            for cand in _local_module_candidates(parsed.path, module, parsed.language):
+            for cand in _local_module_candidates(
+                parsed.path, module, parsed.language
+            ):
                 if cand in seen or _snapshot_path_is_skipped(cand):
                     continue
                 seen.add(cand)
@@ -1253,24 +1234,20 @@ def _is_test_file(path: str) -> bool:
     """Check if a file is a test file based on naming conventions."""
     path_lower = path.lower()
     path_parts = Path(path).parts
-
+    
     # Check file name patterns
     filename = Path(path).name.lower()
-    if (
-        filename.startswith("test_")
-        or filename.endswith("_test.py")
-        or filename.endswith("_test.js")
-    ):
+    if filename.startswith("test_") or filename.endswith("_test.py") or filename.endswith("_test.js"):
         return True
-
+    
     # Check if in test directory
     if "test" in path_parts or "tests" in path_parts or "__tests__" in path_parts:
         return True
-
+    
     # Check spec files (JavaScript/TypeScript)
     if filename.endswith(".spec.ts") or filename.endswith(".spec.js"):
         return True
-
+    
     return False
 
 
@@ -1281,48 +1258,40 @@ def _extract_test_context(
 ) -> list[dict[str, Any]]:
     """Extract test-specific context: fixtures, decorators, and conftest."""
     context = []
-
+    
     # Extract pytest fixtures defined in the file
     for func in parsed.function_symbols:
         decorators = func.get("decorators", [])
         func_name = func.get("name", "")
-
+        
         # Skip if this is one of the modified functions (will be added separately)
         if func_name in modified_function_names:
             continue
-
+        
         # Look for pytest fixtures
-        is_fixture = any(
-            "pytest.fixture" in dec or "@fixture" in dec for dec in decorators
-        )
+        is_fixture = any("pytest.fixture" in dec or "@fixture" in dec for dec in decorators)
         if is_fixture:
-            context.append(
-                {
-                    "kind": "pytest_fixture",
-                    "path": parsed.path,
-                    "language": parsed.language,
-                    "name": func_name,
-                    "decorators": decorators,
-                    "code": func.get("code", "")[:1500],  # Truncate to save tokens
-                    "line_range": func.get("line_range"),
-                }
-            )
-
+            context.append({
+                "kind": "pytest_fixture",
+                "path": parsed.path,
+                "language": parsed.language,
+                "name": func_name,
+                "decorators": decorators,
+                "code": func.get("code", "")[:1500],  # Truncate to save tokens
+                "line_range": func.get("line_range"),
+            })
+    
     # Extract module-level imports to show mock.patch and other test utilities
     if parsed.import_symbols:
-        imports_code = "\n".join(
-            imp.get("code", "") for imp in parsed.import_symbols[:20]
-        )
+        imports_code = "\n".join(imp.get("code", "") for imp in parsed.import_symbols[:20])
         if imports_code.strip():
-            context.append(
-                {
-                    "kind": "test_imports",
-                    "path": parsed.path,
-                    "language": parsed.language,
-                    "code": imports_code,
-                }
-            )
-
+            context.append({
+                "kind": "test_imports",
+                "path": parsed.path,
+                "language": parsed.language,
+                "code": imports_code,
+            })
+    
     # Look for conftest.py in the same directory
     conftest_path = Path(parsed.path).parent / "conftest.py"
     conftest_str = str(conftest_path)
@@ -1331,22 +1300,18 @@ def _extract_test_context(
         # Extract fixtures from conftest
         for func in conftest_parsed.function_symbols[:5]:  # Limit to first 5
             decorators = func.get("decorators", [])
-            is_fixture = any(
-                "pytest.fixture" in dec or "@fixture" in dec for dec in decorators
-            )
+            is_fixture = any("pytest.fixture" in dec or "@fixture" in dec for dec in decorators)
             if is_fixture:
-                context.append(
-                    {
-                        "kind": "conftest_fixture",
-                        "path": conftest_str,
-                        "language": conftest_parsed.language,
-                        "name": func.get("name"),
-                        "decorators": decorators,
-                        "code": func.get("code", "")[:1000],
-                        "line_range": func.get("line_range"),
-                    }
-                )
-
+                context.append({
+                    "kind": "conftest_fixture",
+                    "path": conftest_str,
+                    "language": conftest_parsed.language,
+                    "name": func.get("name"),
+                    "decorators": decorators,
+                    "code": func.get("code", "")[:1000],
+                    "line_range": func.get("line_range"),
+                })
+    
     return context
 
 
@@ -1410,7 +1375,7 @@ def collect_relevant_context(
     for file_diff in file_diffs:
         parsed = snapshot.files.get(file_diff.path)
         is_test = _is_test_file(file_diff.path)
-
+        
         for hunk in file_diff.hunks:
             new_code = hunk.new_code()
             old_code = hunk.old_code()
@@ -1438,11 +1403,11 @@ def collect_relevant_context(
 
             if not parsed or not parsed.lines:
                 continue
-
+            
             # ENHANCEMENT #1: Extract FULL context for ALL modified lines (not just added)
             # Get all modified lines (added + context lines)
             all_modified_lines = set(hunk.modified_new_lines)
-
+            
             # Collect symbols that contain ANY modified line
             modified_symbols: set[tuple[str, int]] = set()  # (symbol_type, index)
             for line_number in all_modified_lines:
@@ -1451,24 +1416,21 @@ def collect_relevant_context(
                     symbol_type, symbol = match
                     symbol_index = (
                         parsed.function_symbols.index(symbol)
-                        if symbol_type == "function"
-                        and symbol in parsed.function_symbols
+                        if symbol_type == "function" and symbol in parsed.function_symbols
                         else parsed.class_symbols.index(symbol)
                     )
                     modified_symbols.add((symbol_type, symbol_index))
-
+            
             # Extract context for all modified symbols (limit to prevent token explosion)
             modified_function_names = set()
-            for symbol_type, symbol_index in list(modified_symbols)[
-                :12
-            ]:  # Increased from 8 to 12
+            for symbol_type, symbol_index in list(modified_symbols)[:12]:  # Increased from 8 to 12
                 if symbol_type == "function":
                     symbol = parsed.function_symbols[symbol_index]
                 else:
                     symbol = parsed.class_symbols[symbol_index]
-
+                
                 modified_function_names.add(symbol.get("name", ""))
-
+                
                 # Find the first modified line in this symbol for focus
                 symbol_start, symbol_end = symbol.get("line_range", [0, 0])
                 focus_line = None
@@ -1476,7 +1438,7 @@ def collect_relevant_context(
                     if symbol_start <= line_num <= symbol_end:
                         focus_line = line_num
                         break
-
+                
                 add_piece(
                     _context_piece_from_symbol(
                         kind="repo_context",
@@ -1487,7 +1449,7 @@ def collect_relevant_context(
                         focus_line=focus_line,
                     )
                 )
-
+                
                 # For functions, also resolve imports and calls
                 if symbol_type == "function":
                     for imported_name in symbol.get("imports_used", []):
@@ -1504,7 +1466,7 @@ def collect_relevant_context(
                             call_name,
                         ):
                             add_piece(reference)
-
+        
         # ENHANCEMENT #2: Extract test-specific context for test files
         if is_test and parsed:
             test_context = _extract_test_context(
@@ -1514,7 +1476,7 @@ def collect_relevant_context(
             )
             for piece in test_context:
                 add_piece(piece)
-
+    
     return pieces
 
 
@@ -1564,26 +1526,26 @@ def _llm_context_payload(
         code = str(piece.get("code") or "").strip()
         if not code:
             continue
-
+        
         llm_piece = {
             "kind": piece.get("kind"),
             "path": piece.get("path"),
             "hunk_header": piece.get("hunk_header"),
             "code": code,
         }
-
+        
         # Keep decorators for test files (critical context)
         decorators = piece.get("decorators")
         if decorators:
             llm_piece["decorators"] = decorators
-
+        
         # Keep name for better context understanding
         name = piece.get("name")
         if name:
             llm_piece["name"] = name
-
+        
         payload.append(llm_piece)
-
+    
     return payload
 
 
@@ -1620,13 +1582,6 @@ You are reviewing GitHub pull request #{pr.pr_number} for repository {pr.full_na
 
 Scope:
 - Focus on what this PR changes (diff + ``Relevant extracted code context``). Do not suggest unrelated refactors of untouched code.
-
-First review the diff purely, before using the context to guide your review.
-Take a first pass at the diff, and raise issues around categories.
-- Shell safety
-- Validation misuse
-- Access control bugs
-- Data integrity issues
 
 Inline comments:
 - One distinct issue per inline; anchor to the best line (or short range) using only
@@ -1677,7 +1632,6 @@ def generate_review_decision(
         relevant_context,
         previous_comments,
     )
-    print(prompt)
     agent = create_agent(
         model=get_github_review_agent_llm(),
         tools=[],
