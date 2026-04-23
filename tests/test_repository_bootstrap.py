@@ -35,9 +35,9 @@ class TestRepositoryBootstrap:
 
         assert model is not None
         assert model.provider == "ollama"
-        assert model.name == "glm-5:cloud"
-        assert model.input_cost_per_token == Decimal("1.40") / Decimal(1_000_000)
-        assert model.output_cost_per_token == Decimal("4.40") / Decimal(1_000_000)
+        assert model.name == "kimi-k2.5:cloud"
+        assert model.input_cost_per_token == Decimal("0.60") / Decimal(1_000_000)
+        assert model.output_cost_per_token == Decimal("3.00") / Decimal(1_000_000)
 
     def test_get_or_create_default_model_returns_existing(self, db_session):
         """Reuse row when provider+name match :func:`~constants.default_catalog_model_spec`."""

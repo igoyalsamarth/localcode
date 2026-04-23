@@ -33,7 +33,7 @@ class TestConstants:
         """Test default agent model name."""
         with patch.dict(os.environ, {}, clear=True):
             model = get_agent_model_name()
-            assert model == "glm-5:cloud"
+            assert model == "kimi-k2.5:cloud"
 
     def test_get_agent_model_name_custom(self):
         """Test custom model name from env."""
@@ -42,17 +42,17 @@ class TestConstants:
             assert model == "custom-model"
 
     def test_default_catalog_model_spec(self):
-        """Default catalog row matches GLM-5-class pricing and MODEL/provider env."""
+        """Default catalog row matches Kimi K2.5 cloud pricing and MODEL/provider env."""
         with patch.dict(
             os.environ,
-            {"MODEL": "glm-5:cloud", "AGENT_LLM_PROVIDER": "ollama"},
+            {"MODEL": "kimi-k2.5:cloud", "AGENT_LLM_PROVIDER": "ollama"},
             clear=True,
         ):
             prov, name, inp, out = default_catalog_model_spec()
             assert prov == "ollama"
-            assert name == "glm-5:cloud"
-            assert inp == Decimal("1.40") / Decimal(1_000_000)
-            assert out == Decimal("4.40") / Decimal(1_000_000)
+            assert name == "kimi-k2.5:cloud"
+            assert inp == Decimal("0.60") / Decimal(1_000_000)
+            assert out == Decimal("3.00") / Decimal(1_000_000)
 
     def test_get_database_url_missing(self):
         """Test database URL raises error when not set."""
