@@ -275,11 +275,32 @@ class RepositorySnapshot:
     symbol_index: dict[str, list[dict[str, Any]]]
 
 
+InlineCommentSeverity = Literal[
+    "nitpick",
+    "minor_bug",
+    "major_bug",
+    "blocking",
+    "security",
+    "other",
+]
+
+
 class ReviewInlineComment(BaseModel):
     path: str = Field(..., description="The file path of the inline comment.")
     line: int = Field(
         ...,
         description="The line number (1-based) on which to comment on the specified side.",
+    )
+    severity: InlineCommentSeverity = Field(
+        ...,
+        description=(
+            "Required classification: ``nitpick`` (style/polish), ``minor_bug`` (real issue, "
+            "usually non-blocking), ``major_bug`` (serious correctness/reliability), ``blocking`` "
+            "(should block merge), ``security`` (security impact), ``other`` (maintainability, "
+            "docs, or anything that does not fit the above). Align ``review_event``: use "
+            "REQUEST_CHANGES when any inline is ``blocking``, ``major_bug``, or ``security`` "
+            "that should stop merge."
+        ),
     )
     body: str = Field(
         ...,
@@ -288,16 +309,8 @@ class ReviewInlineComment(BaseModel):
             "behavior, reliability, or meaningful maintainability tied to this diff. Explain "
             "the risk and a concrete fix when practical. Skip pure style or naming preferences. "
             "Start by citing the anchor line (e.g. “Line 42: …”) using the same number as "
-            "``line`` / ``commentable_right_lines`` so readers can match the inline to the diff."
-        ),
-    )
-    severity: Literal["blocking", "major", "minor", "nit"] | None = Field(
-        None,
-        description=(
-            "Optional triage: blocking (should block merge), major (should fix), minor "
-            "(should fix when practical), nit (small polish). Align with ``review_event``: "
-            "REQUEST_CHANGES implies at least one blocking or major issue. Reflect impact in "
-            "``body`` as well so GitHub readers see it."
+            "``line`` / ``commentable_right_lines``. Do **not** prefix with severity text; "
+            "severity is a separate field and is prepended when posting to GitHub."
         ),
     )
     side: Literal["RIGHT", "LEFT"] = Field(
@@ -1678,7 +1691,7 @@ Inline comments (primary output for findings):
 - One distinct issue per inline; anchor to the best line (or short range) using only
   ``commentable_right_lines`` in the *same* hunk as the change, with ``side`` ``RIGHT`` (``right_code`` / head branch). Do not use ``LEFT``/base side for inline review comments.
 - In ``body``, **name the anchor line explicitly** (e.g. “Line 42: …”) using the same 1-based line number as the structured ``line`` field so humans can match the comment to the diff.
-- Set ``severity`` when clear: ``blocking`` / ``major`` / ``minor`` / ``nit``. Use ``blocking`` or ``major`` for issues that justify REQUEST_CHANGES; ``minor`` / ``nit`` for non-blocking feedback. Still spell out impact in ``body``.
+- **Every inline must set ``severity``** (required): one of ``nitpick``, ``minor_bug``, ``major_bug``, ``blocking``, ``security``, ``other``. Choose the best fit; use ``other`` instead of omitting. Use ``blocking`` / ``major_bug`` / ``security`` for issues that justify REQUEST_CHANGES when merge should stop; ``minor_bug`` / ``nitpick`` / ``other`` for non-blocking feedback. Still spell out impact in ``body`` (do not duplicate the severity label in prose—the post step prepends it for GitHub).
 - Each inline should be actionable and **specific** (not “consider testing” with no tie to the changed lines). Say what can go wrong and how to fix when clear.
 - Prefer real defects (bugs, security, wrong behavior, reliability, contract/API misuse) grounded in the diff or supplied context. Avoid generic praise, vague worries, and pure style or naming preferences.
 - **Only if** something cannot be tied to any ``commentable_right_lines`` may you mention it briefly in ``review_body`` alone (rare); never paste the same text in both an inline and a summary.
@@ -1693,7 +1706,7 @@ Test-specific guidance:
 
 Review outcome:
 - Do not repeat existing comments unless the issue still applies and matters.
-- Use REQUEST_CHANGES only when merge should be blocked (correctness, security, serious defects); align with ``severity`` on inlines (typically ``blocking`` or ``major`` present).
+- Use REQUEST_CHANGES only when merge should be blocked (correctness, security, serious defects); align with ``severity`` on inlines (typically ``blocking``, ``major_bug``, or material ``security``).
 - Use APPROVE when there are no material findings; use COMMENT for non-blocking feedback.
 """.strip()
 
@@ -1757,6 +1770,19 @@ def generate_review_decision(
     return ReviewDecision.model_validate(structured)
 
 
+def _github_inline_comment_body(comment: ReviewInlineComment) -> str:
+    """Prefix human-readable severity on GitHub so every inline visibly shows classification."""
+    labels: dict[InlineCommentSeverity, str] = {
+        "nitpick": "Nitpick",
+        "minor_bug": "Minor bug",
+        "major_bug": "Major bug",
+        "blocking": "Blocking",
+        "security": "Security",
+        "other": "Note",
+    }
+    return f"**[{labels[comment.severity]}]** {comment.body}"
+
+
 def _comment_is_valid(
     comment: ReviewInlineComment, file_diff: PullRequestFileDiff
 ) -> bool:
@@ -1801,7 +1827,7 @@ def publish_review(
             repo=pr.repo_name,
             pr_number=pr.pr_number,
             token=token,
-            body=comment.body,
+            body=_github_inline_comment_body(comment),
             commit_id=pr.head_sha,
             path=comment.path,
             line=comment.line,

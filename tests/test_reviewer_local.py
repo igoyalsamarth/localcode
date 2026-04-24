@@ -271,12 +271,14 @@ class TestPublishReview:
                 ReviewInlineComment(
                     path="src/a.py",
                     line=2,
+                    severity="minor_bug",
                     body="valid",
                     side="RIGHT",
                 ),
                 ReviewInlineComment(
                     path="src/a.py",
                     line=999,
+                    severity="nitpick",
                     body="invalid",
                     side="RIGHT",
                 ),
@@ -287,6 +289,8 @@ class TestPublishReview:
 
         mock_inline.assert_called_once()
         assert mock_inline.call_args.kwargs["line"] == 2
+        assert "**[Minor bug]**" in mock_inline.call_args.kwargs["body"]
+        assert "valid" in mock_inline.call_args.kwargs["body"]
         mock_comment.assert_called_once()
         mock_submit.assert_called_once()
 
