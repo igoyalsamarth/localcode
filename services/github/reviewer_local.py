@@ -42,7 +42,10 @@ from services.github.pr_payload import PROpenedForReview
 logger = get_logger(__name__)
 
 # Compact JSON in LLM user messages (token-efficient; same data as pretty-printed).
-_REVIEW_USER_MESSAGE_JSON_KWARGS: dict[str, Any] = {"separators": (",", ":"), "ensure_ascii": False}
+_REVIEW_USER_MESSAGE_JSON_KWARGS: dict[str, Any] = {
+    "separators": (",", ":"),
+    "ensure_ascii": False,
+}
 
 _MAX_PREVIOUS_COMMENTS = 25
 _MAX_FILE_SNAPSHOT_BYTES = 250_000
@@ -289,7 +292,7 @@ class ReviewInlineComment(BaseModel):
     path: str = Field(..., description="The file path of the inline comment.")
     line: int = Field(
         ...,
-        description="The line number (1-based) on which to comment on the specified side.",
+        description="The line number on which to comment on the specified side.",
     )
     severity: InlineCommentSeverity = Field(
         ...,
