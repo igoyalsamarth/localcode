@@ -319,30 +319,39 @@ class ReviewInlineComment(BaseModel):
 class ReviewDecision(BaseModel):
     summary: str = Field(
         ...,
-        description="Short human-readable recap of findings, or that the diff looks sound.",
+        description=(
+            "Very short recap (1–3 sentences): verdict and scale of findings. Do not re-list "
+            "issues that are already explained in ``inline_comments``—reference that you left "
+            "inlines instead of repeating details."
+        ),
     )
     review_event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"] = "COMMENT"
     review_body: str = Field(
         ...,
         description=(
-            "Markdown body attached to the **submitted PR review** (the review with event "
-            "APPROVE / REQUEST_CHANGES / COMMENT). Use a short headline plus bullets for "
-            "findings and overall verdict. This is what appears in the review thread tied to "
-            "the review event, not the issue-comment timeline by itself."
+            "Markdown on the **submitted PR review** (approve/request-changes/comment). "
+            "**Verdict-first:** headline + at most brief bullets for themes or merge posture only. "
+            "Put every concrete, anchorable finding in ``inline_comments`` with full detail there—"
+            "do **not** repeat the same explanation here (avoids duplicate text across review vs "
+            "inlines). You may say e.g. “See inline comments on …” or “N findings inlines below.”"
         ),
     )
     pr_comment_body: str = Field(
         ...,
         description=(
-            "Markdown for the **separate PR conversation (issue) comment** posted in addition "
-            "to the review. High-level overview, context, or merge guidance; align with "
-            "``review_body`` and inline comments **without duplicating** the same bullet list "
-            "verbatim—complement or shorten instead."
+            "Markdown for the **PR conversation (issue) comment**. Keep it **minimal and non-"
+            "duplicative**: thank-you, one-line summary, or merge nudge—**not** a second copy "
+            "of inline findings or the same bullets as ``review_body``. If nothing to add beyond "
+            "the review + inlines, a single short sentence is enough."
         ),
     )
     inline_comments: list[ReviewInlineComment] = Field(
         default_factory=list,
-        description="One anchored inline per distinct issue; empty if you have no actionable findings.",
+        description=(
+            "Primary place for **specific** findings: one anchored inline per distinct issue "
+            "you can tie to ``commentable_right_lines``. Prefer many precise inlines over few "
+            "generic summary bullets. Empty only if there are no actionable findings."
+        ),
     )
 
 
@@ -1645,10 +1654,13 @@ def _extract_json_payload(text: str) -> dict[str, Any]:
 _GITHUB_REVIEW_SYSTEM_MESSAGE = """
 You are a code reviewer for GitHub pull requests. The user message contains one PR: repository, number, title, body, base/head branches, changed file blocks (JSON), and prior comments (JSON). Produce the structured response required by the tool (summary, review_event, review_body, pr_comment_body, inline_comments).
 
-Output fields (GitHub mapping):
-- ``review_body``: Markdown on the **pull request review** itself (the approve/request-changes/comment review). Headline + bullets; this is the main review narrative attached to that event.
-- ``pr_comment_body``: Markdown for a **general PR conversation comment** (issue comment on the PR). Use for brief overview, context, or guidance. Do **not** paste the same full bullet list as ``review_body``—either shorten, merge themes, or add conversation-level context so the two are not redundant clones.
-- ``summary``: Short recap (can align with the first sentence of ``review_body`` or ``pr_comment_body`` but stay concise).
+Output fields (GitHub mapping) — **no duplicate findings across channels:**
+- **Put the substantive finding on the inline** whenever it can be anchored to ``commentable_right_lines``. Full explanation, risk, and fix belong in the inline ``body``.
+- ``review_body``: **Verdict + posture only** (approve / request changes / commented with why). Optional ultra-short theme (“mostly small nits”, “one blocking auth issue”)—**do not** re-copy the same paragraphs or bullet points that already appear in ``inline_comments``. Prefer “See inlines on ``path``” over repeating them.
+- ``pr_comment_body``: **Minimal** (one or two sentences): optional thank-you, merge hint, or meta note. **Must not** restate individual findings that are already in inlines or duplicate ``review_body``.
+- ``summary``: 1–3 sentences max; no issue-by-issue rehash if inlines cover it.
+
+**Prefer more inlines, less generic prose:** If you see several distinct issues on the diff, use **several inline comments** (each one specific). Avoid long generic walls of text in ``review_body`` / ``pr_comment_body`` that mirror those points.
 
 Scope:
 - Focus on what this PR changes: each file entry has ``hunks``; each hunk has ``right_code`` (and ``left_code`` when the base differed), optional ``extra_context``, and optional ``file_level_context`` (tests). Do not suggest unrelated refactors of untouched code.
@@ -1661,13 +1673,15 @@ Take a first pass at the diff, and raise issues around categories:
 - Access control bugs
 - Language semantics: truthiness, reference vs value equality (including time/wrapper types where the language compares identity, not instant)
 
-Inline comments:
+Inline comments (primary output for findings):
+- **Default:** Every distinct issue you would mention in a review should appear as an **inline** if it can be anchored. Do not “save” findings for ``review_body`` only—readers and evals expect specifics on the diff.
 - One distinct issue per inline; anchor to the best line (or short range) using only
   ``commentable_right_lines`` in the *same* hunk as the change, with ``side`` ``RIGHT`` (``right_code`` / head branch). Do not use ``LEFT``/base side for inline review comments.
 - In ``body``, **name the anchor line explicitly** (e.g. “Line 42: …”) using the same 1-based line number as the structured ``line`` field so humans can match the comment to the diff.
 - Set ``severity`` when clear: ``blocking`` / ``major`` / ``minor`` / ``nit``. Use ``blocking`` or ``major`` for issues that justify REQUEST_CHANGES; ``minor`` / ``nit`` for non-blocking feedback. Still spell out impact in ``body``.
-- Each comment should be actionable: say what can go wrong and how to address it when the fix is clear.
+- Each inline should be actionable and **specific** (not “consider testing” with no tie to the changed lines). Say what can go wrong and how to fix when clear.
 - Prefer real defects (bugs, security, wrong behavior, reliability, contract/API misuse) grounded in the diff or supplied context. Avoid generic praise, vague worries, and pure style or naming preferences.
+- **Only if** something cannot be tied to any ``commentable_right_lines`` may you mention it briefly in ``review_body`` alone (rare); never paste the same text in both an inline and a summary.
 
 Coverage:
 - Before finishing, skim changed logic for common problems you can tie to this diff: validation/auth gaps, boundary/off-by-one mistakes, async/races or missing ``await``, error handling that hides failures, resource leaks, injection or unsafe deserialization, incorrect API usage, environment/portability of scripts and one-liners, and similar issues. Include medium-severity problems when they are plausible, not only catastrophic cases.
