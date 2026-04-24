@@ -41,6 +41,9 @@ from services.github.pr_payload import PROpenedForReview
 
 logger = get_logger(__name__)
 
+# Compact JSON in LLM user messages (token-efficient; same data as pretty-printed).
+_REVIEW_USER_MESSAGE_JSON_KWARGS: dict[str, Any] = {"separators": (",", ":"), "ensure_ascii": False}
+
 _MAX_PREVIOUS_COMMENTS = 25
 _MAX_FILE_SNAPSHOT_BYTES = 250_000
 _MAX_REFERENCE_DEPTH = 3
@@ -283,7 +286,18 @@ class ReviewInlineComment(BaseModel):
         description=(
             "Markdown: one distinct actionable issue—correctness, security, user-visible "
             "behavior, reliability, or meaningful maintainability tied to this diff. Explain "
-            "the risk and a concrete fix when practical. Skip pure style or naming preferences."
+            "the risk and a concrete fix when practical. Skip pure style or naming preferences. "
+            "Start by citing the anchor line (e.g. “Line 42: …”) using the same number as "
+            "``line`` / ``commentable_right_lines`` so readers can match the inline to the diff."
+        ),
+    )
+    severity: Literal["blocking", "major", "minor", "nit"] | None = Field(
+        None,
+        description=(
+            "Optional triage: blocking (should block merge), major (should fix), minor "
+            "(should fix when practical), nit (small polish). Align with ``review_event``: "
+            "REQUEST_CHANGES implies at least one blocking or major issue. Reflect impact in "
+            "``body`` as well so GitHub readers see it."
         ),
     )
     side: Literal["RIGHT", "LEFT"] = Field(
@@ -310,11 +324,21 @@ class ReviewDecision(BaseModel):
     review_event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"] = "COMMENT"
     review_body: str = Field(
         ...,
-        description="Markdown body for the submitted GitHub review (headline + bullets for findings).",
+        description=(
+            "Markdown body attached to the **submitted PR review** (the review with event "
+            "APPROVE / REQUEST_CHANGES / COMMENT). Use a short headline plus bullets for "
+            "findings and overall verdict. This is what appears in the review thread tied to "
+            "the review event, not the issue-comment timeline by itself."
+        ),
     )
     pr_comment_body: str = Field(
         ...,
-        description="PR conversation comment: overview + bullets; align with inline comments without repeating every anchor.",
+        description=(
+            "Markdown for the **separate PR conversation (issue) comment** posted in addition "
+            "to the review. High-level overview, context, or merge guidance; align with "
+            "``review_body`` and inline comments **without duplicating** the same bullet list "
+            "verbatim—complement or shorten instead."
+        ),
     )
     inline_comments: list[ReviewInlineComment] = Field(
         default_factory=list,
@@ -1621,24 +1645,32 @@ def _extract_json_payload(text: str) -> dict[str, Any]:
 _GITHUB_REVIEW_SYSTEM_MESSAGE = """
 You are a code reviewer for GitHub pull requests. The user message contains one PR: repository, number, title, body, base/head branches, changed file blocks (JSON), and prior comments (JSON). Produce the structured response required by the tool (summary, review_event, review_body, pr_comment_body, inline_comments).
 
+Output fields (GitHub mapping):
+- ``review_body``: Markdown on the **pull request review** itself (the approve/request-changes/comment review). Headline + bullets; this is the main review narrative attached to that event.
+- ``pr_comment_body``: Markdown for a **general PR conversation comment** (issue comment on the PR). Use for brief overview, context, or guidance. Do **not** paste the same full bullet list as ``review_body``—either shorten, merge themes, or add conversation-level context so the two are not redundant clones.
+- ``summary``: Short recap (can align with the first sentence of ``review_body`` or ``pr_comment_body`` but stay concise).
+
 Scope:
-- Focus on what this PR changes: each file entry has ``hunks``; each hunk has ``right_code`` (and ``left_code`` when the base differed) plus optional ``extra_context`` and optional ``file_level_context`` (tests). Do not suggest unrelated refactors of untouched code.
-- Review the hunk diffs first, then use ``extra_context`` / ``file_level_context`` to reason about call sites, types, and tests.
+- Focus on what this PR changes: each file entry has ``hunks``; each hunk has ``right_code`` (and ``left_code`` when the base differed), optional ``extra_context``, and optional ``file_level_context`` (tests). Do not suggest unrelated refactors of untouched code.
+- **Diff pass:** Walk ``right_code`` against ``left_code`` when present: treat every added or materially changed line as a mini code review—correctness, API misuse, and “would this behave differently in another environment (OS, runtime, locale)?”. Then use ``extra_context`` / ``file_level_context`` for call sites, types, and tests.
 
 First review the diff purely, before using the context to guide your review.
 Take a first pass at the diff, and raise issues around categories:
-- Shell safety
+- Shell and tooling safety (injection, word-splitting, flags or syntax that differ across OS or tool implementations)
 - Validation misuse
 - Access control bugs
+- Language semantics: truthiness, reference vs value equality (including time/wrapper types where the language compares identity, not instant)
 
 Inline comments:
 - One distinct issue per inline; anchor to the best line (or short range) using only
   ``commentable_right_lines`` in the *same* hunk as the change, with ``side`` ``RIGHT`` (``right_code`` / head branch). Do not use ``LEFT``/base side for inline review comments.
+- In ``body``, **name the anchor line explicitly** (e.g. “Line 42: …”) using the same 1-based line number as the structured ``line`` field so humans can match the comment to the diff.
+- Set ``severity`` when clear: ``blocking`` / ``major`` / ``minor`` / ``nit``. Use ``blocking`` or ``major`` for issues that justify REQUEST_CHANGES; ``minor`` / ``nit`` for non-blocking feedback. Still spell out impact in ``body``.
 - Each comment should be actionable: say what can go wrong and how to address it when the fix is clear.
 - Prefer real defects (bugs, security, wrong behavior, reliability, contract/API misuse) grounded in the diff or supplied context. Avoid generic praise, vague worries, and pure style or naming preferences.
 
 Coverage:
-- Before finishing, skim changed logic for common problems you can tie to this diff: validation/auth gaps, boundary/off-by-one mistakes, async/races or missing ``await``, error handling that hides failures, resource leaks, injection or unsafe deserialization, incorrect API usage, and similar issues. Include medium-severity problems when they are plausible, not only catastrophic cases.
+- Before finishing, skim changed logic for common problems you can tie to this diff: validation/auth gaps, boundary/off-by-one mistakes, async/races or missing ``await``, error handling that hides failures, resource leaks, injection or unsafe deserialization, incorrect API usage, environment/portability of scripts and one-liners, and similar issues. Include medium-severity problems when they are plausible, not only catastrophic cases.
 
 Test-specific guidance:
 - For test files, pay attention to ``decorators`` field showing @mock.patch, @pytest.fixture, etc. These affect test behavior.
@@ -1647,7 +1679,7 @@ Test-specific guidance:
 
 Review outcome:
 - Do not repeat existing comments unless the issue still applies and matters.
-- Use REQUEST_CHANGES only for issues that should block merge (correctness, security, serious defects).
+- Use REQUEST_CHANGES only when merge should be blocked (correctness, security, serious defects); align with ``severity`` on inlines (typically ``blocking`` or ``major`` present).
 - Use APPROVE when there are no material findings; use COMMENT for non-blocking feedback.
 """.strip()
 
@@ -1672,15 +1704,15 @@ def build_review_user_message(
 {pr.pr_body or "(No description provided)"}
 
 ## Changed files
-Per hunk: diff text (``right_code`` / optional ``left_code``), ``commentable_right_lines``, and ``extra_context`` (no full-file patch duplicate). Optional per-file ``file_level_context`` for tests.
+Per hunk: diff text (``right_code`` / optional ``left_code``), ``commentable_right_lines``, and ``extra_context`` (no full-file patch duplicate). Optional per-file ``file_level_context`` for tests. JSON below is minified to save tokens.
 
 ```json
-{json.dumps(review_file_blocks, indent=2)}
+{json.dumps(review_file_blocks, **_REVIEW_USER_MESSAGE_JSON_KWARGS)}
 ```
 
 ## Existing PR comments
 ```json
-{json.dumps(previous_comments, indent=2)}
+{json.dumps(previous_comments, **_REVIEW_USER_MESSAGE_JSON_KWARGS)}
 ```
 """.strip()
 

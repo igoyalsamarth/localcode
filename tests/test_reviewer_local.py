@@ -1,5 +1,7 @@
 """Tests for the local reviewer pipeline helpers."""
 
+import json
+import re
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -154,11 +156,27 @@ class TestReviewerPayloadParsing:
         assert "Repository symbol snapshot" not in user
         assert "Changed files" in user
         assert "extra_context" in user
-        assert '"code": "def foo():\\n    return 1"' in user
-        assert '"name": "foo"' in user
+        assert "minified" in user.lower()
+        assert '"code":"def foo():\\n    return 1"' in user
+        assert '"name":"foo"' in user
         assert '"line_range"' not in user
         assert '"calls"' not in user
         assert '"imports_used"' not in user
+
+    def test_build_review_user_message_json_fenced_blocks_are_minified(self):
+        """Changed files and prior comments use compact JSON (no indent whitespace)."""
+        pr = _sample_pr()
+        review_blocks = [{"path": "x.py", "status": "modified", "language": "python", "hunks": []}]
+        prev = {"issue_comments": [], "review_comments": []}
+        user = build_review_user_message(pr, review_blocks, prev)
+
+        blocks = re.findall(r"```json\n(.*?)\n```", user, re.DOTALL)
+        assert len(blocks) == 2
+        files_json, comments_json = blocks
+        assert json.loads(files_json) == review_blocks
+        assert json.loads(comments_json) == prev
+        assert "\n " not in files_json
+        assert files_json == json.dumps(review_blocks, separators=(",", ":"), ensure_ascii=False)
 
     def test_build_review_user_message_includes_decorators_for_tests(self):
         pr = _sample_pr()
