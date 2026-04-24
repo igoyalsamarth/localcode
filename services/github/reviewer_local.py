@@ -308,9 +308,9 @@ class ReviewInlineComment(BaseModel):
             "Markdown: one distinct actionable issue—correctness, security, user-visible "
             "behavior, reliability, or meaningful maintainability tied to this diff. Explain "
             "the risk and a concrete fix when practical. Skip pure style or naming preferences. "
-            "Start by citing the anchor line (e.g. “Line 42: …”) using the same number as "
-            "``line`` / ``commentable_right_lines``. Do **not** prefix with severity text; "
-            "severity is a separate field and is prepended when posting to GitHub."
+            "Do **not** start with ``Line N:``, ``L42:``, or similar—the inline is already "
+            "anchored on GitHub; use the structured ``line`` field only. Do **not** prefix "
+            "with severity text; severity is a separate field and is prepended when posting."
         ),
     )
     side: Literal["RIGHT", "LEFT"] = Field(
@@ -1690,7 +1690,7 @@ Inline comments (primary output for findings):
 - **Default:** Every distinct issue you would mention in a review should appear as an **inline** if it can be anchored. Do not “save” findings for ``review_body`` only—readers and evals expect specifics on the diff.
 - One distinct issue per inline; anchor to the best line (or short range) using only
   ``commentable_right_lines`` in the *same* hunk as the change, with ``side`` ``RIGHT`` (``right_code`` / head branch). Do not use ``LEFT``/base side for inline review comments.
-- In ``body``, **name the anchor line explicitly** (e.g. “Line 42: …”) using the same 1-based line number as the structured ``line`` field so humans can match the comment to the diff.
+- In ``body``, **do not** write ``Line 28:`` / ``L28:`` / line-number prefixes—the review UI already shows which line the comment is on. Put line numbers only in the structured ``line`` field.
 - **Every inline must set ``severity``** (required): one of ``nitpick``, ``minor_bug``, ``major_bug``, ``blocking``, ``security``, ``other``. Choose the best fit; use ``other`` instead of omitting. Use ``blocking`` / ``major_bug`` / ``security`` for issues that justify REQUEST_CHANGES when merge should stop; ``minor_bug`` / ``nitpick`` / ``other`` for non-blocking feedback. Still spell out impact in ``body`` (do not duplicate the severity label in prose—the post step prepends it for GitHub).
 - Each inline should be actionable and **specific** (not “consider testing” with no tie to the changed lines). Say what can go wrong and how to fix when clear.
 - Prefer real defects (bugs, security, wrong behavior, reliability, contract/API misuse) grounded in the diff or supplied context. Avoid generic praise, vague worries, and pure style or naming preferences.
